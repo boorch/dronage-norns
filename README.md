@@ -37,13 +37,9 @@ Four voices built on a famous open-source macro synth module, each with its own 
 
 ## 1. Install & launch
 
-In [maiden](https://monome.org/docs/norns/maiden/)'s REPL, type:
-
 ```
 ;install https://github.com/boorch/dronage-norns
 ```
-
-then on the norns pick **SELECT › dronage-norns › run**.
 
 **First run installs the audio engine.** The very first launch installs the engine, then restarts norns to load it. You'll see an install screen; follow the prompt (**K3 = finish and restart**). This happens once. After the restart, run the script again and you're in.
 
