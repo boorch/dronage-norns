@@ -1,4 +1,4 @@
-# Dronage Norns Manual
+# Dronage Norns
 
 Ambient drone workstation for **monome norns**.
 
