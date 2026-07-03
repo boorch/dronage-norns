@@ -32,6 +32,7 @@ Four voices built on a famous open-source macro synth module, each with its own 
 9. [Cheat sheet](#9-cheat-sheet)
 10. [FAQ](#10-faq)
 11. [The full scale list](#11-the-full-scale-list)
+12. [Credits](#12-credits)
 
 ---
 
@@ -496,3 +497,16 @@ Persian, Oriental, Balinese, Purvi, Spanish 8, Gagaku, In Sen, Okinawa, Hirajosh
 
 19-EDO, 22-EDO, 31-EDO, Pythagorean, 7-lim JI, QC Meantone, Kirnberger, Vallotti, Werckmeister, Makam Rast, Maqam Rast, Dastgah 17, Thai 7-TET, Drone 5ths, Harm Series, Sub Series, LMY WTP, Eikosany, Hexany 1357, Hexany 1379.
 
+---
+
+## 12. Credits
+
+Dronage Norns stands on some excellent open-source DSP - vendored, and tastefully modified where it served the sound:
+
+- **Plaits** by Mutable Instruments (Émilie Gillet) - the macro oscillator behind every voice. On top of it, four home-made custom engines: **Hyper**, **VCous**, **VCtar** and **Combust**.
+- **mi-UGens** (Volker Böhm) - the SuperCollider wrapper our vendored oscillator grew from.
+- **ChowDSP** analog-tape models (Jatin Chowdhury, via Mads Kjeldgaard's portedplugins) - the MASTER FX tape stage.
+- **Greyhole** (Julian Parker, sc3-plugins) - the reverb, wrapped in our own octave-shimmer feedback loop.
+- **SuperCollider** - the engine underneath all of it.
+
+Full attribution and license texts: `LICENSES.txt`.
