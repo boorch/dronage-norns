@@ -181,7 +181,7 @@ The five **visualizers** (E1 cycles them; the choice isn't saved):
 
 ### VOICE 1–4
 
-One screen per voice, each a scrollable list of that voice's parameters. **E2** scrolls, **E3** changes the value, **K2+K3** resets the highlighted parameter. **K3** alone toggles that voice's **gate** - whatever parameter is focused - so muting/unmuting a voice never requires scrolling.
+One screen per voice, each a scrollable list of that voice's parameters. **E2** scrolls, **E3** changes the value, **K2+K3** resets the highlighted parameter. **K3** alone toggles that voice's **gate** (regardless of which parameter is focused) so muting/unmuting a voice never requires scrolling.
 
 ![VOICE: a voice's scrollable parameter list](docs/img/voice.png)
 
