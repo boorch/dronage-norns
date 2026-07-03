@@ -44,6 +44,16 @@
 
 
 
+-- ---- performance mode (FULL vs LITE DSP graph) ----
+-- Auto-detected from the board: Pi 4 class = FULL; original norns / Pi 3 class = LITE
+-- (lighter tape stage + mono voice chain - see lib/dronage_norns_perf.lua and the README).
+-- Set to true/false to force a mode for testing (this line stays ACTIVE, not commented,
+-- because matron's Lua VM keeps globals across script reloads - always assigning means
+-- every reload re-resolves the mode; nil = auto-detect).
+DRONAGE_FORCE_LITE = nil
+local perf = include("dronage-norns/lib/dronage_norns_perf")
+print("dronage-norns: " .. (perf.lite and "LITE" or "FULL") .. " perf mode (" .. perf.model .. ")")
+
 local install = include("dronage-norns/lib/dronage_norns_install")
 -- Only declare the engine once the custom UGen .so are installed in Extensions - otherwise norns
 -- would try to build SynthDefs against UGens scsynth hasn't loaded. First run installs + asks to

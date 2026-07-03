@@ -23,6 +23,24 @@ Engine_DronageNornsSC_Main : CroneEngine {
 	}
 
 	alloc {
+		// FULL vs LITE DSP graph. LITE (original norns / Pi 3 class) composes smaller SynthDefs
+		// at build time: no hysteresis-saturation / loss / degrade tape stages, mono voice filter
+		// chain. Same command + arg surface either way, so Lua/scenes/psets are mode-agnostic.
+		// Lua resolves the mode (auto-detect + manual override, lib/dronage_norns_perf.lua) and
+		// writes the flag file BEFORE the engine allocs; the model check here is the fallback
+		// (missing file, e.g. renamed script folder). Unknown boards fall back to LITE (safe).
+		var lite = try {
+			var flag = "/home/we/dust/data/dronage-norns/perf-mode";
+			if(File.exists(flag)) {
+				File.readAllString(flag).contains("lite")
+			} {
+				var m = File.readAllString("/proc/device-tree/model");
+				["Pi 4", "Pi 400", "Compute Module 4", "Pi 5", "Compute Module 5"]
+					.any({ |s| m.contains(s) }).not
+			}
+		} { true };   // both reads failed (no flag, no device-tree): assume slow board, LITE
+		("Engine_DronageNornsSC_Main: " ++ if(lite, { "LITE" }, { "FULL" }) ++ " DSP graph").postln;
+
 		// All voices live in one group at the engine's processing group (context.xg).
 		voiceGroup = Group.new(context.xg);
 		dlySendBus = Bus.audio(context.server, 1);  // mono forward-delay send
@@ -121,10 +139,18 @@ trig   = TDelay.kr(t_trig, 0.004);   // dronage-tui: the audible trigger fires ~
 				decay: lpgDecay, lpg_colour: lpgCol,
 				drone: (1 - seqMode)   // reference parity: drone -> trigger_patched=false (free-run/patch-load)
 			);
-			// OUT routing (dronage-tui parity), ALWAYS-STEREO from here -> sig = [L, R]. outMode 0-4:
+			// OUT routing (dronage-tui parity). FULL: stereo from here -> sig = [L, R]. outMode 0-4:
 			// MIX/OUT/AUX put the SAME signal on L+R (centred mono); STEREO=out->L/aux->R; INV=aux->L/out->R.
-			sig = [ Select.ar(outMode, [(sig[0] + sig[1]) * 0.5, sig[0], sig[1], sig[0], sig[1]]),   // L
+			// LITE: `sig` stays a SINGLE channel, so each filter below builds ONE instance instead of
+			// two (the chorus re-widens at the end of the chain), and STEREO/INV collapse to the MIX
+			// blend - exactly what they sum to in mono. Same outMode arg + values in both modes.
+			if(lite) {
+				var mix = (sig[0] + sig[1]) * 0.5;
+				sig = Select.ar(outMode, [mix, sig[0], sig[1], mix, mix]);
+			} {
+				sig = [ Select.ar(outMode, [(sig[0] + sig[1]) * 0.5, sig[0], sig[1], sig[0], sig[1]]),   // L
 				        Select.ar(outMode, [(sig[0] + sig[1]) * 0.5, sig[0], sig[1], sig[1], sig[0]]) ]; // R: STEREO out->L/aux->R, INV swaps
+			};
 			// (self-enveloped amp decay = selfVca is applied POST-filter, folded into `g` below. Applying
 			// it here, pre-MoogFF, fed exact 0.0 into the resonant ladder/SVF between hits and drove their
 			// empty recursive state into denormals = the "squelch for the first few hits then clean".)
@@ -151,7 +177,11 @@ trig   = TDelay.kr(t_trig, 0.004);   // dronage-tui: the audible trigger fires ~
 			g = level * env * selfVca;  // × self-enveloped decay, POST-filter (filters never see the zero cut)
 			// Bipolar stereo chorus (custom UGen): stereo [L,R] -> [L,R]. <0 warm, >0 spacey, 0 bypass.
 			// Replaces Pan2 - the chorus does the stereo-ization (dronage chain: chorus -> VCA -> pan).
-			# l, r = DronageChorus.ar(sig[0], sig[1], chorus.clip(-1, 1));   // stereo-in: L/R -> chorused L/R
+			# l, r = if(lite) {
+				DronageChorus.ar(sig, sig, chorus.clip(-1, 1));       // LITE mono chain -> same signal on both inputs
+			} {
+				DronageChorus.ar(sig[0], sig[1], chorus.clip(-1, 1)); // stereo-in: L/R -> chorused L/R
+			};
 			// VCA + dronage balance-pan (attenuate the opposite channel). Out.ar sums the 4 voices.
 			oL = l * g * (1 - pan.max(0));
 			oR = r * g * (1 + pan.min(0));
@@ -242,13 +272,24 @@ trig   = TDelay.kr(t_trig, 0.004);   // dronage-tui: the audible trigger fires ~
 			// highs as it saturates (real tape); a high shelf @ 5 kHz on the wet branch restores air.
 			// The shelf SCALES with satamt - the harder it saturates (darker), the more treble back:
 			// satamt 0.3..0.8 (knob 0..1) -> shelf +2..+6 dB.
-			snd = SelectX.ar(sat.clip(0, 1), [snd,
-				BHiShelf.ar(DronageAnalogTape.ar(snd, 0.5, satamt.clip(0, 1), 0.55, 1, 0), 5000, 1,
-					Lag.kr(satamt.clip(0, 1), 0.1).linlin(0.3, 0.8, 2, 6))]);
-			// tape aging - opt-in (default 0): head-gap HF loss / chew dropouts / degrade noise
-			snd = SelectX.ar(loss.clip(0, 1),    [snd, DronageAnalogLoss.ar(snd, 0.5, 0.5, 0.5, 1)]);
+			// Oversampling OFF (arg 5 = 0): profiled at 8.3% of a core at 2x vs 4.5% at 1x, and the
+			// difference is inaudible under the rest of the dirt at realistic Tape Age settings.
+			// LITE skips the hysteresis entirely (SelectX computes BOTH branches even at mix 0, so
+			// on a CM3 it would burn ~11% of the core while silent at the default Tape Age = 0).
+			if(lite.not) {
+				snd = SelectX.ar(sat.clip(0, 1), [snd,
+					BHiShelf.ar(DronageAnalogTape.ar(snd, 0.5, satamt.clip(0, 1), 0.55, 0, 0), 5000, 1,
+						Lag.kr(satamt.clip(0, 1), 0.1).linlin(0.3, 0.8, 2, 6))]);
+			};
+			// tape aging - opt-in (default 0): head-gap HF loss / chew dropouts / degrade noise.
+			// LITE keeps only chew (cheap, keeps Tape Age's upper range audible); loss + degrade go.
+			if(lite.not) {
+				snd = SelectX.ar(loss.clip(0, 1),    [snd, DronageAnalogLoss.ar(snd, 0.5, 0.5, 0.5, 1)]);
+			};
 			snd = SelectX.ar(chew.clip(0, 1),    [snd, DronageAnalogChew.ar(snd, 0.5, 0.5, 0.5)]);
-			snd = SelectX.ar(degrade.clip(0, 1), [snd, DronageAnalogDegrade.ar(snd, 0.5, 0.5, 0.5, 0.5)]);
+			if(lite.not) {
+				snd = SelectX.ar(degrade.clip(0, 1), [snd, DronageAnalogDegrade.ar(snd, 0.5, 0.5, 0.5, 0.5)]);
+			};
 			// mu-law compand "color" (tapedeck), wet/dry by `color`
 			snd = SelectX.ar(color.clip(0, 1), [snd, Shaper.ar(compressBuf, snd.clip2(0.999))]);
 			// wow & flutter (Stefaan Himpe via tapedeck), reworked: real tape wobbles the WHOLE signal -

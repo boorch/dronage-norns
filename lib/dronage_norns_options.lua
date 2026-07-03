@@ -16,6 +16,8 @@
 -- dronage_norns_defaults.lua are still index-based - update them if you reorder; they're the
 -- NEW-project baseline, not a save.)
 
+local perf = include("dronage-norns/lib/dronage_norns_perf")   -- labels may differ per perf mode (keys never do)
+
 local M = {}
 M.sets, M.id2set = {}, {}
 
@@ -64,8 +66,10 @@ define("out_mode", {                                 -- value = OUT routing (mon
   { key = "mix", label = "MIX", value = 0 },
   { key = "out", label = "MAIN", value = 1 },   -- the model's main output (label was OUT; key stays save-stable)
   { key = "aux", label = "AUX", value = 2 },
-  { key = "stereo",     label = "STEREO",     value = 3 },   -- out->L, aux->R
-  { key = "inv_stereo", label = "INV STEREO", value = 4 },   -- aux->L, out->R
+  -- LITE runs the voice chain mono, so 3/4 collapse to the MIX blend in the engine; the labels
+  -- wink at that. Keys are shared across modes -> projects/scenes swap between devices lossless.
+  { key = "stereo",     label = perf.lite and ":|" or "STEREO",     value = 3 },   -- out->L, aux->R
+  { key = "inv_stereo", label = perf.lite and ":(" or "INV STEREO", value = 4 },   -- aux->L, out->R
 })
 define("shape", {                                     -- value = LFO waveform id (src_compute switch)
   { key = "sine",    label = "sine",    value = 1 },

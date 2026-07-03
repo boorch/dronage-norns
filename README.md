@@ -43,7 +43,8 @@ Four voices built on a famous open-source macro synth module, each with its own 
 ```
 
 > ⚠️ **Only tested on a norns shield with a Raspberry Pi 4B.** The audio engine ships prebuilt
-> 32-bit ARM binaries; stock norns (CM3) and other Pi models are untested.
+> 32-bit ARM binaries. Boards below Pi 4 class (original norns, Pi 3 shields) automatically get a
+> lighter engine (see the FAQ); that path is untested on real hardware and best-effort.
 
 **First run installs the audio engine,** then restarts norns to load it. You'll see an install screen; follow the prompt (**K3 = finish and restart**). This happens once. After the restart, run the script again and you're in.
 
@@ -205,7 +206,7 @@ One screen per voice, each a scrollable list of that voice's parameters. **E2** 
 | **Fade Out**     | fade-out time when you gate the voice off                |
 | **LPG Decay**    | low-pass-gate decay (the pluck/ring length in sequenced mode) |
 | **LPG Color**    | LPG blend, pure VCA → low-pass filter as the gate closes |
-| **Out**          | oscillator routing: MIX / MAIN / AUX (mono) or STEREO / INV STEREO (the model's main + aux outputs spread across L/R) |
+| **Out**          | oscillator routing: MIX / MAIN / AUX (mono) or STEREO / INV STEREO (the model's main + aux outputs spread across L/R). On original norns the voice chain runs mono, so STEREO / INV STEREO behave exactly like MIX - they're listed as `:|` / `:(` there |
 | **Pan**          | stereo placement (bipolar, centre = middle)              |
 | **Level**        | voice level                                              |
 
@@ -310,6 +311,8 @@ Three shared master-chain screens, each a simple parameter list (**E2** scroll, 
 |----------|------|-------------|---------------|
 
 `Tape Age` is the single tape-wear macro: saturation rides it 1:1 from 0%, the mu-law colour tints subtly across the range, and above 50% the wow/chew/degrade artifacts ramp in (head loss last, above 75%). `Hiss` is the level of a looping tape-hiss bed that sits before the compression, so it pumps with the mix. `Master Volume` is the very last gain in the chain (100% = unity) and is **never saved** - not in scenes, not in projects.
+
+On original norns (the lite engine, see the FAQ) the saturation, head-loss and degrade stages are skipped to fit the CPU - `Tape Age` still drives wow, chew and the colour tint, and `Hiss` / `Compression` work the same everywhere.
 
 ### MACRO CONTROLLER
 
@@ -470,6 +473,10 @@ The low-pass gate only opens and closes when the voice is **triggered**, so the 
 **Q. How do I move between all these screens quickly?**
 
 Hold **K1** and use E2 (rows) / E3 (within a row) / E1 (linear), then release. Or, to stay in a family, just turn **E1** to flip between siblings (the four voices, the eight LFOs, the three FX screens).
+
+**Q. Does it run on original norns (or a Pi 3 shield)?**
+
+Best-effort. The full engine needs more CPU than a CM3/Pi 3 core has, so below Pi 4 class the script automatically loads a **lite engine**: the tape saturation, head-loss and degrade stages are skipped (`Tape Age` still drives wow, chew and the colour tint) and each voice's filter chain runs mono, with the chorus doing the stereo widening - which is why the STEREO / INV STEREO out modes behave exactly like MIX there and are listed as `:|` / `:(`. Everything else is identical, and projects move between full and lite devices losslessly: a STEREO voice saved on a shield survives a round-trip through an original norns untouched. Lite hasn't been tested on real hardware yet.
 
 **Q. Where do projects live?**
 
