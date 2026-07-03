@@ -213,13 +213,20 @@ local function add_tape_params()
       -- 0..0.5 is clean tape, then artifacts ramp in to their ceilings by age 1.0.
       engine.tapeloss(ramp(a, 0.75, 0.5))
       engine.tapewow(ramp(a, 0.5, 0.75))
-      engine.tapechew(ramp(a, 0.5, 1.0))
-      engine.tapedegrade(ramp(a, 0.5, 1.0))
+      -- chew ceiling 0.2 = what the old 1.0-ceiling gave at age 60% (user-tuned 2026-07-04:
+      -- even stereo-linked, full-wet chew was too violent - now age 100% = the old 60%).
+      engine.tapechew(ramp(a, 0.5, 0.2))
+      -- degrade ceiling 0.5 (= the old age-75% amount): its wet path is a ~2 kHz-lowpassed,
+      -- ~-12 dB copy by design, so past ~0.8 mix it swallowed the signal + highs ("the 90% cliff").
+      -- Capped at half, the dry always carries the level and the top end.
+      engine.tapedegrade(ramp(a, 0.5, 0.5))
       -- colour: linear from 0, but ~19x weaker than the original 0.05 slope (old 5% = new 95%).
       engine.tapecolor(a * 0.0026)
       -- hysteresis saturation rides the same knob 1:1 (was its own param): mix + depth floor.
+      -- depth span widened 0.5 -> 0.6 (satamt caps 0.9 = model ceiling M_s 0.6, ~1.3 dB more
+      -- squash at the top; paired with model drive 0.65 in the engine, user-tuned 2026-07-04).
       engine.tapesat(a)
-      engine.tapesatamt(0.3 + (a * 0.5))
+      engine.tapesatamt(0.3 + (a * 0.6))
     end }
   -- looping tape-hiss bed (samples/tapehiss_loop.wav, cached in a server buffer): this is its level.
   -- The wav is hot: raw 5% was already plenty, so the knob's full 0..100% maps to raw 0..0.05.

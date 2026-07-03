@@ -271,24 +271,30 @@ trig   = TDelay.kr(t_trig, 0.004);   // dronage-tui: the audible trigger fires ~
 			// REAL ChowDSP tape saturation (hysteresis model), wet/dry by `sat`. The hysteresis softens
 			// highs as it saturates (real tape); a high shelf @ 5 kHz on the wet branch restores air.
 			// The shelf SCALES with satamt - the harder it saturates (darker), the more treble back:
-			// satamt 0.3..0.8 (knob 0..1) -> shelf +2..+6 dB.
+			// satamt 0.3..0.9 (knob 0..1) -> shelf +2..+6 dB.
 			// Oversampling OFF (arg 5 = 0): profiled at 8.3% of a core at 2x vs 4.5% at 1x, and the
 			// difference is inaudible under the rest of the dirt at realistic Tape Age settings.
 			// LITE skips the hysteresis entirely (SelectX computes BOTH branches even at mix 0, so
 			// on a CM3 it would burn ~11% of the core while silent at the default Tape Age = 0).
+			// model drive 0.65 (was 0.55): user-tuned 2026-07-04, "ever so slightly more apparent" -
+			// a = M_s/(6*drive), so this steepens the Langevin curve ~18% (~+1.5 dB into the knee).
 			if(lite.not) {
 				snd = SelectX.ar(sat.clip(0, 1), [snd,
-					BHiShelf.ar(DronageAnalogTape.ar(snd, 0.5, satamt.clip(0, 1), 0.55, 0, 0), 5000, 1,
-						Lag.kr(satamt.clip(0, 1), 0.1).linlin(0.3, 0.8, 2, 6))]);
+					BHiShelf.ar(DronageAnalogTape.ar(snd, 0.5, satamt.clip(0, 1), 0.65, 0, 0), 5000, 1,
+						Lag.kr(satamt.clip(0, 1), 0.1).linlin(0.3, 0.9, 2, 6))]);
 			};
 			// tape aging - opt-in (default 0): head-gap HF loss / chew dropouts / degrade noise.
 			// LITE keeps only chew (cheap, keeps Tape Age's upper range audible); loss + degrade go.
+			// chew + degrade use the STEREO-LINKED variants: one random scheduler / shared draws for
+			// both channels. The mono units multichannel-expanded gave L and R independent random
+			// clocks - alternating one-sided dropouts that read as a fake ping-pong delay at high
+			// Tape Age (measured: L/R envelope corr -0.6, the two channels NEVER dipped together).
 			if(lite.not) {
 				snd = SelectX.ar(loss.clip(0, 1),    [snd, DronageAnalogLoss.ar(snd, 0.5, 0.5, 0.5, 1)]);
 			};
-			snd = SelectX.ar(chew.clip(0, 1),    [snd, DronageAnalogChew.ar(snd, 0.5, 0.5, 0.5)]);
+			snd = SelectX.ar(chew.clip(0, 1),    [snd, DronageAnalogChewSt.ar(snd[0], snd[1], 0.5, 0.5, 0.5)]);
 			if(lite.not) {
-				snd = SelectX.ar(degrade.clip(0, 1), [snd, DronageAnalogDegrade.ar(snd, 0.5, 0.5, 0.5, 0.5)]);
+				snd = SelectX.ar(degrade.clip(0, 1), [snd, DronageAnalogDegradeSt.ar(snd[0], snd[1], 0.5, 0.5, 0.5, 0.5)]);
 			};
 			// mu-law compand "color" (tapedeck), wet/dry by `color`
 			snd = SelectX.ar(color.clip(0, 1), [snd, Shaper.ar(compressBuf, snd.clip2(0.999))]);
@@ -307,8 +313,10 @@ trig   = TDelay.kr(t_trig, 0.004);   // dronage-tui: the audible trigger fires ~
 			// tape glue compression, wet/dry by `comp`. Low threshold so it engages on the (quiet,
 			// steady) drone signal, ~5:1 above it, slow-ish release for audible pump, then makeup gain
 			// to bring the glued body up. Net = clearly denser + louder, not just shaved peaks.
+			// control = the MONO SUM (linked stereo bus compression, industry standard): with per-
+			// channel control the two compressors pumped independently and shoved the image around.
 			snd = SelectX.ar(comp.clip(0, 1), [snd,
-				Compander.ar(snd, snd, thresh: 0.08, slopeBelow: 1, slopeAbove: 0.2, clampTime: 0.008, relaxTime: 0.18) * 2.8]);
+				Compander.ar(snd, (snd[0] + snd[1]) * 0.5, thresh: 0.08, slopeBelow: 1, slopeAbove: 0.2, clampTime: 0.008, relaxTime: 0.18) * 2.8]);
 			// final: collapse bass to mono, tanh brickwall, output trim (tapedeck "final")
 			snd = BHiPass.ar(snd, 200) + Pan2.ar(BLowPass.ar(snd[0] + snd[1], 200));
 			snd = snd.tanh * db.dbamp;

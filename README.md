@@ -46,7 +46,7 @@ Four voices built on a famous open-source macro synth module, each with its own 
 > 32-bit ARM binaries. Boards below Pi 4 class (original norns, Pi 3 shields) automatically get a
 > lighter engine (see the FAQ); that path is untested on real hardware and best-effort.
 
-**First run installs the audio engine,** then restarts norns to load it. You'll see an install screen; follow the prompt (**K3 = finish and restart**). This happens once. After the restart, run the script again and you're in.
+**First run installs the audio engine,** then restarts norns to load it. You'll see an install screen; follow the prompt (**K3 = finish and restart**). After the restart, run the script again and you're in. The same screen reappears after any update that changes the audio engine - same drill, K3 and restart.
 
 ---
 
