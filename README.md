@@ -248,7 +248,7 @@ Eight LFOs, one screen each, with a live scope of the LFO's output. **E2** scrol
 | **Phase**   | shift the cycle start (0.125% steps; on **S&H SEED** 100% spans the whole Length, so whole steps rotate the melody). Hold **K3** + turn to snap to 3.125% = one step at Length 32 |
 | **Skew**    | warp the waveform                                              |
 | **Smooth**  | round the shape (softens S&H steps into glides)                 |
-| **Length**  | steps per cycle, for the sample-and-hold shapes                |
+| **Length**  | amount of steps S&H SEED will produce before looping back                |
 | **Variation**| S&H-rnd walk size: at 0 the held value freezes; turn up for bigger random steps |
 | **Mutate**  | S&H-seed Turing-style drift of the looped table                |
 | **Polarity**| bipolar (−1…+1) or unipolar (0…+1)                             |
