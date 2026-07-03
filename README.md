@@ -2,7 +2,7 @@
 
 Ambient drone workstation for **monome norns**.
 
-Dronage Norns is part of the **Dronage** series. The idea began with [Dronage Terminal](https://boorch.itch.io/dronage-terminal), the original desktop drone synth and the first iteration of the series; Dronage Norns brings that sound to the norns sound computer.
+Dronage Norns is part of the **Dronage** series. The idea began with [Dronage Terminal](https://boorch.itch.io/dronage-terminal), the original terminal drone synth and the first iteration of the series; Dronage Norns brings that sound to the norns sound computer.
 
 Four voices built on a famous open-source macro synth module, each with its own filter, drive, fades and Euclidean trigger sequencer, fed through a shared delay / reverb / tape section. LFO Matrix with eight LFOs, a five-track CV sequencer and three macros modulate anything. Eight scenes per project, named projects on disk, and a HOME screen full of live visualizers.
 
