@@ -41,6 +41,10 @@ Four voices built on a famous open-source macro synth module, each with its own 
 ;install https://github.com/boorch/dronage-norns
 ```
 
+> ⚠️ **Only tested on a norns shield with a Raspberry Pi 4B.** The audio engine ships prebuilt
+> 32-bit ARM binaries; stock norns (CM3) and other Pi models are untested - proceed at your own
+> risk, and reports (working or not) are very welcome.
+
 **First run installs the audio engine,** then restarts norns to load it. You'll see an install screen; follow the prompt (**K3 = finish and restart**). This happens once. After the restart, run the script again and you're in.
 
 ---
