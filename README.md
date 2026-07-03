@@ -250,7 +250,7 @@ Eight LFOs, one screen each, with a live scope of the LFO's output. **E2** scrol
 | **Smooth**  | round the shape (softens S&H steps into glides)                 |
 | **Length**  | amount of steps S&H-seed will produce before looping around                |
 | **Variation**| S&H-rnd walk distance: at 0 the held value freezes; turn up for bigger random jumps |
-| **Mutate**  | S&H-seed Turing-style drift of the looped table. 0% to lock the sequence, increase to gradually introduce some change in some of the steps                |
+| **Mutate**  | S&H-seed Turing-style drift of the looped table. 0% to lock the sequence, increase the chances of sampling a new value for upcoming step(s)                |
 | **Polarity**| bipolar (−1…+1) or unipolar (0…+1)                             |
 
 An LFO doesn't do anything until you **route** it on the MOD MATRIX.
