@@ -41,7 +41,7 @@ Four voices built on a famous open-source macro synth module, each with its own 
 ;install https://github.com/boorch/dronage-norns
 ```
 
-**First run installs the audio engine.** The very first launch installs the engine, then restarts norns to load it. You'll see an install screen; follow the prompt (**K3 = finish and restart**). This happens once. After the restart, run the script again and you're in.
+**First run installs the audio engine,** then restarts norns to load it. You'll see an install screen; follow the prompt (**K3 = finish and restart**). This happens once. After the restart, run the script again and you're in.
 
 ---
 
