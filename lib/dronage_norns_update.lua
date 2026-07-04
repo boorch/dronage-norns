@@ -19,8 +19,6 @@
 local M = {}
 
 M.state = nil        -- nil | "offer" | "pulling" | "failed"
-M.subject = ""       -- newest remote commit subject (shown as the "what's new" line)
-M.behind = 0
 M.dir = norns.state.path   -- overridable, so the flow can be tested against a scratch clone
 
 local function sh(cmd) return "cd '" .. M.dir .. "' 2>/dev/null && " .. cmd end
@@ -34,14 +32,10 @@ function M.check()
     "timeout 5 git fetch -q 2>/dev/null || { echo OFFLINE; exit 0; }; " ..
     "b=$(git rev-list --count 'HEAD..@{u}' 2>/dev/null || echo 0); " ..
     "a=$(git rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0); " ..
-    "s=$(git log -1 --format=%s '@{u}' 2>/dev/null); " ..
-    "echo \"STATUS $b $a $s\"")
+    "echo \"STATUS $b $a\"")
   norns.system_cmd(cmd, function(out)
-    local b, a, s = string.match(out or "", "STATUS (%d+) (%d+)([^\n]*)")
+    local b, a = string.match(out or "", "STATUS (%d+) (%d+)")
     if b and tonumber(b) > 0 and tonumber(a) == 0 then
-      M.behind = tonumber(b)
-      -- display form: our release subjects start with "release: " - drop it, the screen is 128px
-      M.subject = (s or ""):gsub("^%s+", ""):gsub("^release:%s*", "")
       M.state = "offer"
     end
     -- every other classification (NOGIT/DIRTY/NOUPSTREAM/OFFLINE/ahead/parse failure): stay silent

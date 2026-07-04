@@ -415,11 +415,8 @@ function redraw()
     screen.clear(); screen.aa(0)
     screen.level(15); screen.move(64, 16); screen.text_center("dronage-norns")
     if update.state == "offer" then
-      screen.level(15); screen.move(64, 31); screen.text_center("UPDATE AVAILABLE")
-      if update.subject ~= "" then
-        screen.level(5); screen.move(64, 42); screen.text_center(string.sub(update.subject, 1, 24))
-      end
-      screen.level(8); screen.move(64, 56); screen.text_center("K2 = later   K3 = update")
+      screen.level(15); screen.move(64, 34); screen.text_center("UPDATE AVAILABLE")
+      screen.level(8); screen.move(64, 52); screen.text_center("K2 = later   K3 = update")
     elseif update.state == "pulling" then
       screen.level(15); screen.move(64, 38); screen.text_center("updating...")
     else   -- "failed"
