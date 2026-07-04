@@ -478,6 +478,10 @@ Hold **K1** and use E2 (rows) / E3 (within a row) / E1 (linear), then release. O
 
 Best-effort. The full engine needs more CPU than a CM3/Pi 3 core has, so below Pi 4 class the script automatically loads a **lite engine**: the tape saturation, head-loss and degrade stages are skipped (`Tape Age` still drives wow, chew and the colour tint) and each voice's filter chain runs mono, with the chorus doing the stereo widening - which is why the STEREO / INV STEREO out modes behave exactly like MIX there and are listed as `:|` / `:(`. Everything else is identical, and projects move between full and lite devices losslessly: a STEREO voice saved on a shield survives a round-trip through an original norns untouched. Lite hasn't been tested on real hardware yet.
 
+**Q. How do updates work?**
+
+At launch, dronage quietly checks whether a newer release exists (it never blocks - the check runs in the background and only ever shows something if there's news). If an update is available you get a full-screen **UPDATE AVAILABLE** prompt: **K2 = later, K3 = update**. K3 pulls the update and reloads the script; if the release changed the audio engine you'll then see the familiar install screen (K3 = restart) and you're done. The check only happens when the script was installed via maiden/git, the files are unmodified, and the norns is online - otherwise it silently skips and boots as normal. If you installed by copying files to the SD card by hand, you'll never see the prompt; update the same way you installed. Updating through maiden's project manager also still works exactly as before.
+
 **Q. Where do projects live?**
 
 On the norns, in `dust/data/dronage-norns/`. Saving and loading are done entirely from the **PROJECT** screen.

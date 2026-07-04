@@ -55,6 +55,8 @@ local perf = include("dronage-norns/lib/dronage_norns_perf")
 print("dronage-norns: " .. (perf.lite and "LITE" or "FULL") .. " perf mode (" .. perf.model .. ")")
 
 local install = include("dronage-norns/lib/dronage_norns_install")
+local update = include("dronage-norns/lib/dronage_norns_update")
+dronage_update = update   -- deliberate global: lets the maiden REPL inspect/drive the update flow
 -- Only declare the engine once the custom UGen .so are installed in Extensions - otherwise norns
 -- would try to build SynthDefs against UGens scsynth hasn't loaded. First run installs + asks to
 -- restart (see init/redraw below).
@@ -363,6 +365,10 @@ function init()
   amp_poll = poll.set("amp_out_l", function(v) ui_amp = v; screen_dirty = true end)
   amp_poll.time = 1 / 20
   amp_poll:start()
+
+  -- async update check (lib/dronage_norns_update.lua): the overlay appears a moment after
+  -- boot ONLY for clean git installs that are online and behind; everything else is silent.
+  update.check()
 end
 
 -- ---------- UI: grid screens (lib/dronage_norns_screens) ----------
@@ -405,6 +411,24 @@ function redraw()
     screen.update()
     return
   end
+  if update.state then   -- update overlay outranks splash + normal UI (install screen still wins)
+    screen.clear(); screen.aa(0)
+    screen.level(15); screen.move(64, 16); screen.text_center("dronage-norns")
+    if update.state == "offer" then
+      screen.level(15); screen.move(64, 31); screen.text_center("UPDATE AVAILABLE")
+      if update.subject ~= "" then
+        screen.level(5); screen.move(64, 42); screen.text_center(string.sub(update.subject, 1, 24))
+      end
+      screen.level(8); screen.move(64, 56); screen.text_center("K2 = later   K3 = update")
+    elseif update.state == "pulling" then
+      screen.level(15); screen.move(64, 38); screen.text_center("updating...")
+    else   -- "failed"
+      screen.level(15); screen.move(64, 34); screen.text_center("update failed")
+      screen.level(8); screen.move(64, 50); screen.text_center("K3 = continue")
+    end
+    screen.update()
+    return
+  end
   if splash then
     screen.clear(); screen.display_image(splash, 0, 0); screen.update()
     return
@@ -414,6 +438,7 @@ end
 
 function enc(n, d)
   if needs_install then return end
+  if update.state then return end   -- update overlay owns the input
   if splash then splash = nil; screen_dirty = true; return end   -- dismiss only; do nothing else
   scr.enc(n, d); screen_dirty = true
 end
@@ -421,6 +446,21 @@ end
 function key(n, z)
   if needs_install then
     if install_ok and n == 3 and z == 1 then finish_install() end   -- K3 = finish + restart (incl jackd)
+    return
+  end
+  if update.state then
+    if update.state == "offer" then
+      if n == 2 and z == 1 then update.dismiss(); screen_dirty = true end   -- later (asks again next boot)
+      if n == 3 and z == 1 then
+        update.pull(function(ok)
+          -- success -> reload ourselves into the new version; if the update changed engine
+          -- binaries, the reload trips the installer hash gate and its restart screen takes over.
+          if ok then norns.script.load(norns.state.script) end
+        end)
+      end
+    elseif update.state == "failed" then
+      if n == 3 and z == 1 then update.dismiss(); screen_dirty = true end
+    end
     return
   end
   if splash then if z == 1 then splash = nil; screen_dirty = true end; return end  -- dismiss only
