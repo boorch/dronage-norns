@@ -3,7 +3,8 @@
 -- After init we ASYNCHRONOUSLY ask git whether the script's clone is behind its upstream.
 -- The UPDATE AVAILABLE overlay appears ONLY when every one of these holds:
 --   * the script dir is a git repo with an upstream   (manual SD-card copy installs: skip)
---   * the working tree is clean                       (user tinkered / dev rsync: skip)
+--   * no TRACKED file is modified (-uno: untracked extras are fine - maiden itself drops a
+--     .project metadata file into every install, and ff-only pulls don't touch strays)
 --   * the network answered within 5 s                 (offline norns: skip - `timeout 5`
 --                                                      also stops a no-DNS fetch hanging)
 --   * we are strictly BEHIND with no local commits    (diverged history: skip)
@@ -28,7 +29,7 @@ function M.check()
   -- one shell round-trip that classifies everything and prints a single machine-readable line
   local cmd = sh(
     "git rev-parse --git-dir >/dev/null 2>&1 || { echo NOGIT; exit 0; }; " ..
-    "[ -n \"$(git status --porcelain 2>/dev/null)\" ] && { echo DIRTY; exit 0; }; " ..
+    "[ -n \"$(git status --porcelain -uno 2>/dev/null)\" ] && { echo DIRTY; exit 0; }; " ..
     "git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1 || { echo NOUPSTREAM; exit 0; }; " ..
     "timeout 5 git fetch -q 2>/dev/null || { echo OFFLINE; exit 0; }; " ..
     "b=$(git rev-list --count 'HEAD..@{u}' 2>/dev/null || echo 0); " ..
