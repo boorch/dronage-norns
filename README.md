@@ -48,6 +48,8 @@ Four voices built on a famous open-source macro synth module, each with its own 
 
 **First run installs the audio engine,** then restarts norns to load it. You'll see an install screen; follow the prompt (**K3 = finish and restart**). After the restart, run the script again and you're in. The same screen reappears after any update that changes the audio engine - same drill, K3 and restart.
 
+From then on dronage **checks for updates at launch** and offers to install them (see the [FAQ](#10-faq)); updating through maiden keeps working too.
+
 ---
 
 ## 2. Make your first sound
