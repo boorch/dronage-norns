@@ -54,9 +54,9 @@ function M.capture()
   return snap
 end
 
-function M.recall(i)
-  local snap = M.slots[i]
-  if not snap then return false end
+-- write a snapshot's params + matrix/seq/macro into the live state. Shared by scene recall and
+-- the undo module (which must NOT get recall's macro-amount reset).
+function M.apply(snap)
   for _, id in ipairs(M.ids) do
     local v = snap.params[id]
     if v ~= nil then
@@ -71,6 +71,12 @@ function M.recall(i)
   if snap.matrix then mtx.load(snap.matrix) end
   if snap.seq then seq.load(snap.seq) end
   if snap.macro and mac then mac.load(snap.macro) end
+end
+
+function M.recall(i)
+  local snap = M.slots[i]
+  if not snap then return false end
+  M.apply(snap)
   -- Control-All: the global macro amount always returns to 0 on a scene switch (dronage-tui).
   params:set("dronage_macro_amount", 0)
   return true

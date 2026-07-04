@@ -95,9 +95,10 @@ norns gives you **three encoders** (E1, E2, E3), **three keys** (K1, K2, K3), an
 | **K3**  | per-screen action: gate toggle (HOME/VOICE/EUCLID) · store (SCENES) · load (PROJECT) |
 | **K2+K3** | reset / clear / delete the focused thing                          |
 
-Four global chords work from **any** screen:
+Global gestures, available from **any** screen:
 
-- **K1+K2+K3**: roll a new random **S&H seed** (re-rolls every sample-and-hold LFO at once).
+- **K2 (hold) + E1**: **undo / redo** ([details](#undo-and-redo-k2--e1)).
+- **K1+K2+K3**: **randomize the current screen** with curated, undoable dice ([details](#randomize-k1--k2--k3)).
 - **K1 + E1/E2/E3**: the minimap (next section).
 - **K1 + K2**: transport **play/stop** (on PROJECT this is the quick-save instead).
 - **K1 + K3 (hold) + E1**: **master volume** (next section).
@@ -152,6 +153,35 @@ Most screens speak the same language, so once you learn one you know them all:
 On the **list screens** (VOICE, EUCLID, LFO, and the FX/GLOBAL panels) **K2+K3 resets the highlighted parameter** to its default. Nothing lives on columns any more: the MOD MATRIX moves its LFO column with **E1**, and the CV SEQUENCER and MACRO walk every cell linearly with **E2**.
 
 A few screens layer their own actions on top of this (HOME, SCENES, PROJECT); those are spelled out below.
+
+### Undo and redo (K2 + E1)
+
+Hold **K2** and turn **E1**: **counter-clockwise = undo, clockwise = redo**. One turn is exactly one step, no matter how fast you spin - pause for a moment (or reverse direction) to take the next step. A popup names each step as you cross it ("UNDO RANDOMIZE", "REDO EDITS"), so you always know where you are.
+
+Dronage keeps the last **10 states**. A step is either a burst of knob edits (everything you tweak within about a second becomes one step) or one big action: a randomize, a scene recall / store / initialize, a project load, or a new project. A wrong scene recall, a roll of the dice that went too far, even loading a project over unsaved work - all of it is one K2+E1 turn from recovery.
+
+Two knobs deliberately live outside the history: the MACRO **AMOUNT** and **Master Volume** are live performance controls, so undo never yanks them out of your hands.
+
+### Randomize (K1 + K2 + K3)
+
+Press all three keys together (hold K1 first, then add the others) and the **current screen** rolls its own dice. Every screen randomizes only the thing it owns, with musical guardrails - and every roll is one undo step away from gone:
+
+| Screen         | What gets rolled                                                       |
+|----------------|-------------------------------------------------------------------------|
+| HOME · PROJECT | nothing                                                                 |
+| VOICE          | Model, Harmonics, Timbre, Morph                                         |
+| EUCLID         | the whole pattern; favors 8/16/32-step totals and never lands on *drone* |
+| LFO            | everything except **Mutate**; prefers synced rates. **S&H SEED** LFOs are protected: the first press re-rolls only the seed, a second press rolls seed + Length + Div, and the waveform itself is never rolled away |
+| MOD MATRIX     | a fresh sparse routing for the **focused voice** (a few destinations, one LFO each). Press again to **layer more on top**; a third press starts fresh again |
+| CV SEQUENCER   | the focused track: steps, division, length, both destinations           |
+| DELAY          | everything, full range                                                  |
+| REVERB         | everything (Shimmer lands on 10% steps, Size and Time on whole numbers) |
+| MASTER FX      | Tape Age and Hiss only                                                  |
+| MACRO          | all three destination slots (depths on a 25% grid); AMOUNT is untouched |
+| SCENES         | recall another populated scene at random                                |
+| GLOBAL         | Root, Scale and Seed                                                    |
+
+Rolled percentages always land on whole numbers, so randomized values read clean and are easy to nudge afterwards.
 
 ---
 
@@ -361,7 +391,7 @@ Project-wide settings. A simple list (**E2** scroll, **E3** value, **K2+K3** res
 | **Root**             | musical root note (C … B)                             |
 | **Scale**            | scale for pitch quantization                          |
 | **Mod Depth**        | global scaler on all modulation                       |
-| **Seed**             | the random/S&H seed (also rolled by K1+K2+K3)         |
+| **Seed**             | the random/S&H seed (K1+K2+K3 here, or on an S&H SEED LFO's screen, re-rolls it) |
 | **S&H Seed Start 0** | pin the first step of every S&H SEED loop to 0, so seeded melodies always start from the unmodulated base note |
 
 `Root` and `Scale` set the musical grid: with a scale active, voice **Pitch** steps note-by-note and stays in key; set `Scale` to **Off** for chromatic pitch.
@@ -386,7 +416,7 @@ The list shows **+ new project** at the top, then your saved projects (a dot mar
 
 ![Naming a project: the norns text keyboard, pre-filled with a random name](docs/img/textentry.png)
 
-**Overwrite / delete / load confirmations** are full-screen: **K2 = no, K3 = yes**. Loading a project or starting a new one asks **LOSE UNSAVED CHANGES?** first, since it replaces the live state.
+**Overwrite / delete / load confirmations** are full-screen: **K2 = no, K3 = yes**. Loading a project or starting a new one asks **LOSE UNSAVED CHANGES?** first, since it replaces the live state - and even a confirmed load or new is still undoable afterwards with **K2+E1** (deleting a project's file is not).
 
 ![A full-screen confirmation (project overwrite shown; delete and scene-initialize look the same)](docs/img/confirm.png)
 
@@ -401,7 +431,7 @@ The trick is to let sample-and-hold LFOs choose notes for you while the **scale 
 3. **A melody from a long S&H LFO.** On an LFO screen, set `Shape` to **S&H seed** and `Length` to **16** (a 16-note phrase), and pick a synced `Div`. On the MOD MATRIX, route that LFO into the lead voice's **Pitch** with a moderate depth - now you have a 16-step pattern. Set `Mutate` to around 10% to let the pattern drift: a small change each time it loops.
 4. **Bass and chords from shorter S&H LFOs.** Set another LFO's `Length` to **4** and route it to the bass voice's Pitch with a smaller depth; do the same for a pad. Different lengths and divisions make the lines drift against each other and never repeat.
 5. **Slow transposition from the CV sequencer.** Give one CV-SEQUENCER track a few stepped values aimed at a voice's Pitch and a slow division, so it shifts the whole line through the scale over time while still staying in key.
-6. **Perform and capture.** Re-roll the random lines with `Seed` (GLOBAL, or **K1+K2+K3**). Ride the **MACRO** amount live. When a combination sings, **store it to a scene** (SCENES, K3) and build a set to move between.
+6. **Perform and capture.** Re-roll the random lines by pressing **K1+K2+K3** on the S&H LFO's own screen (it rolls just the seed; on GLOBAL the same chord also rolls Root and Scale). Ride the **MACRO** amount live. A roll you don't like is one **K2+E1** turn from undone. When a combination sings, **store it to a scene** (SCENES, K3) and build a set to move between.
 
 Start with modest depths and slow rates. The magic is in the interplay of a few quantized, out-of-phase lines, not in any single busy one.
 
@@ -425,6 +455,7 @@ Start with modest depths and slow rates. The magic is in the interplay of a few 
 | **K2**      | transport play/stop (SCENES: recall · PROJECT: save)     |
 | **K3**      | per-screen action (gate toggle / store / load)           |
 | **K2+K3**   | reset / clear / delete the focused thing                 |
+| **K2 + E1** | undo (CCW) / redo (CW), one step per turn                |
 
 **Per-screen highlights**
 
@@ -443,7 +474,8 @@ Start with modest depths and slow rates. The magic is in the interplay of a few 
 
 | Do          | To                              |
 |-------------|---------------------------------|
-| **K1+K2+K3**| roll a new random S&H seed       |
+| **K1+K2+K3**| randomize the current screen (undoable) |
+| **K2 + E1** | undo / redo                     |
 | **K1+K2** (PROJECT) | quick-save, random name  |
 | **K1+K2** (elsewhere) | transport play/stop      |
 | **K1+K3** hold + E1 | master volume            |
@@ -471,6 +503,10 @@ You shaped it but didn't route it. An LFO does nothing until you point it at a p
 **Q. Why do LPG Decay and LPG Color seem to do nothing?**
 
 The low-pass gate only opens and closes when the voice is **triggered**, so the LPG controls have nothing to act on while a voice is a *drone*. Set that voice's **Steps** (EUCLID) to a number so it plucks, and both become live.
+
+**Q. I recalled a scene / loaded a project / rolled the dice and lost what I was doing.**
+
+Hold **K2** and turn **E1** counter-clockwise. Dronage keeps a 10-step history of everything musical - knob edits (grouped by gesture), randomizes, scene changes, even full project loads - so one turn steps straight back; clockwise is redo. The two exceptions are the MACRO amount and Master Volume (live performance knobs, never touched by undo) and deleting a project's file from disk, which is permanent.
 
 **Q. How do I move between all these screens quickly?**
 

@@ -20,6 +20,9 @@
 -- - E3: tweak value
 -- - K2: play/stop (most views)
 -- - K2+K3: reset/delete
+-- - K2+E1: undo / redo
+-- - K1+K2+K3: randomize the
+-- current page (curated dice)
 --
 -- VIEW ACTIONS
 -- - K3 toggles gate in Home,
@@ -69,6 +72,9 @@ local mac    = include("dronage-norns/lib/dronage_norns_macro")
 local scales = include("dronage-norns/lib/dronage_norns_scales")
 local scenes = include("dronage-norns/lib/dronage_norns_scenes")
 local project = include("dronage-norns/lib/dronage_norns_project")
+local undo   = include("dronage-norns/lib/dronage_norns_undo")
+local rand   = include("dronage-norns/lib/dronage_norns_random")
+dronage_undo, dronage_rand = undo, rand   -- deliberate globals: maiden-REPL inspection/driving
 local ui     = include("dronage-norns/lib/dronage_norns_ui")
 local grd    = include("dronage-norns/lib/dronage_norns_grid")
 local euclid = include("dronage-norns/lib/dronage_norns_euclid")
@@ -313,8 +319,11 @@ function init()
   mac.add_params()
   scenes.init(mtx, seq, mac)
   scenes.add_pset_hooks()
+  undo.init({ scenes = scenes, project = project })
+  rand.init({ mtx = mtx, seq = seq, mac = mac, scenes = scenes, undo = undo })
   scr.init({
     eng = eng, mtx = mtx, seq = seq, mac = mac, scenes = scenes, euclid = euclid, scales = scales,
+    undo = undo, rand = rand,
     NOTE = NOTE,
     get_amp = function() return ui_amp end,
     transport = function() return transport end,
@@ -332,6 +341,7 @@ function init()
   params:set("clock_tempo", D.global.tempo)           -- enforce our default tempo on boot (PSET/scene overrides)
   params:bang()
   scenes.store_current()    -- baseline scene 1
+  undo.record("BOOT")       -- undo baseline (a post-boot pset auto-restore settles on top of it)
 
   mod_clock = clock.run(function()
     local dt = 1 / mtx.tick_hz
@@ -357,6 +367,7 @@ function init()
   end)
   redraw_metro = metro.init()
   redraw_metro.event = function()
+    undo.tick()        -- gesture debounce: 1 s of quiet after an edit = one undo checkpoint
     redraw()           -- always redraw (live LFO scopes/meters change every frame)
     pcall(grd.redraw)
   end
@@ -372,11 +383,26 @@ function init()
 end
 
 -- ---------- UI: grid screens (lib/dronage_norns_screens) ----------
--- NEW project: reset every param to the centralized defaults, restore the default tempo, forget all
--- scenes. (Save/Load/Delete/naming live in the PROJECT browser via the `project` module + textentry.)
+-- NEW project: every musical param back to its centralized default, matrix/CV-seq/macro cleared,
+-- scenes forgotten, fresh surprise seed (like boot). The scenes id list IS the project-scoped
+-- param set, so iterating it never touches norns system params.
+-- NOTE: params:default() is NOT "factory defaults" - norns implements it as re-READ the last
+-- pset (pset-last.txt), so the old call here quietly reloaded the previous project instead of
+-- initializing (or no-opped when no pset existed). Hence the explicit per-param reset.
 project_new = function()
-  params:default()
+  for _, id in ipairs(scenes.ids) do
+    local p = params:lookup_param(id)
+    local def = p and ((p.controlspec and p.controlspec.default) or p.default)
+    if def ~= nil then pcall(function() params:set(id, def) end) end
+  end
   params:set("clock_tempo", D.global.tempo)
+  params:set("dronage_seed", math.random(0, 4095))   -- fresh-start surprise, matching boot
+  params:set("dronage_macro_amount", 0)
+  for d = 1, #mtx.dests do
+    for s = 1, mtx.NUM_SRC do mtx.set_cell(d, s, 0) end
+  end
+  seq.init(mtx.dest_index)   -- empty tracks
+  mac.init(mtx.dest_index)   -- empty slots
   scenes.clear_all()
   project.current = nil
 end

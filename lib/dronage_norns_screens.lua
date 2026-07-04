@@ -103,6 +103,25 @@ local k2_eaten, k3_eaten = false, false   -- K2/K3 eaten by a matrix/scenes chor
 local jump = 1           -- highlighted cell while K1 held
 local toast_msg, toast_until = "", 0  -- transient on-screen popup
 local function toast(msg) toast_msg = msg; toast_until = util.time() + 1.0 end
+-- undo dirty-marking for edits that bypass params (matrix cells, CV-seq tracks, macro slots)
+local function touched() if C.undo then C.undo.touch() end end
+-- K2+E1 undo/redo latch: ONE step per deliberate turn, however fast the spin. The first tick
+-- fires, then same-direction ticks are swallowed until ~300ms of no motion; reversing fires
+-- immediately (fluid A/B compares). undo_dir resets on each K2 press. (Declared BEFORE
+-- undo_step so they're captured as upvalues, not runtime globals.)
+local UNDO_GAP = 0.3
+local undo_dir, undo_at = 0, 0
+-- one undo (CCW) / redo (CW) step per turn burst
+local function undo_step(d)
+  local dir = d > 0 and 1 or -1
+  local now = util.time()
+  local fire = (dir ~= undo_dir) or (now - undo_at > UNDO_GAP)
+  undo_dir, undo_at = dir, now
+  if not fire then return end
+  local label = (dir > 0) and C.undo.redo() or C.undo.undo()
+  if label then toast((dir > 0 and "REDO " or "UNDO ") .. label)
+  else toast(dir > 0 and "NOTHING TO REDO" or "NOTHING TO UNDO") end
+end
 local cursor = {}        -- [lin] = panel cursor pos
 local top = {}           -- [lin] = panel scroll top
 local msrc = 1           -- matrix: selected source LFO column
@@ -813,12 +832,17 @@ local function project_save()
 end
 
 local function project_activate(idx)
-  -- both paths replace the live (possibly unsaved) state -> ask first, like overwrite/delete
+  -- both paths replace the live (possibly unsaved) state -> ask first, like overwrite/delete.
+  -- Both are undo-checkpointed too (the entry carries the scene slots), so even a confirmed
+  -- wrong LOAD is one K2+E1 turn from recovery.
   local go
-  if idx == 1 then go = function() C.project_new(); toast("NEW PROJECT") end
+  if idx == 1 then
+    go = function() C.undo.around("NEW PROJECT", C.project_new); toast("NEW PROJECT") end
   else
     local n = project_items()[idx]; if not n then return end
-    go = function() C.project.load(n); toast("LOADED " .. n) end
+    go = function()
+      C.undo.around("PROJECT LOAD", function() C.project.load(n) end); toast("LOADED " .. n)
+    end
   end
   confirm = { kind = "project", prompt = { "LOSE UNSAVED CHANGES?" }, action = go }
 end
@@ -988,6 +1012,7 @@ local function step_in_row(d)
   for k, l in ipairs(rv) do if l == cur then i = k break end end
   i = util.clamp(i + d, 1, #rv)
   cur = rv[i]
+  if C.rand then C.rand.nav() end   -- leaving a page re-arms its randomize-press alternation
 end
 
 -- minimap E2: move the highlighted cell one row up/down, to the column closest to the current one
@@ -1022,6 +1047,11 @@ function S.enc(n, d)
     else jump = util.clamp(jump + (d > 0 and 1 or -1), 1, #VIEWS) end
     return
   end
+  if k2held and n == 1 then   -- K2 + E1: undo (CCW) / redo (CW); eat K2's release (no transport)
+    k2_eaten = true
+    undo_step(d)
+    return
+  end
   if n == 1 then
     if v.kind == "home" then home_viz = (home_viz - 1 + (d > 0 and 1 or -1)) % #VIZ_NAMES + 1   -- E1 cycles the HOME viz
     elseif v.kind == "matrix" then msrc = util.clamp(msrc + (d > 0 and 1 or -1), 1, C.mtx.NUM_SRC)   -- alone in its row: E1 = LFO column
@@ -1034,17 +1064,18 @@ function S.enc(n, d)
   elseif k == "matrix" then
     if n == 2 then cursor[cur] = util.clamp((cursor[cur] or 1) + d, 1, #mvis)
     elseif n == 3 then local di = mvis[util.clamp(cursor[cur] or 1, 1, #mvis)].di
-      C.mtx.set_cell(di, msrc, (C.mtx.cell[di][msrc] or 0) + ddelta(d)) end   -- 0.1% steps + accel
+      C.mtx.set_cell(di, msrc, (C.mtx.cell[di][msrc] or 0) + ddelta(d)); touched() end   -- 0.1% steps + accel
   elseif k == "modseq" then
     if n == 2 then   -- E2 = one linear walk over every cell, track by track (like MACRO's E2)
       local lin = util.clamp(((cursor[cur] or 1) - 1) * SEQ_NCOL + seqcol + d, 1, C.seq.NUM_TRACKS * SEQ_NCOL)
       cursor[cur] = math.floor((lin - 1) / SEQ_NCOL) + 1
       seqcol = (lin - 1) % SEQ_NCOL + 1
-    elseif n == 3 then seq_edit(cursor[cur] or 1, seqcol, d) end   -- E3 = tweak focused cell
+    elseif n == 3 then seq_edit(cursor[cur] or 1, seqcol, d); touched() end   -- E3 = tweak focused cell
   elseif k == "macro" then
     if n == 2 then macro_sel = util.clamp(macro_sel + (d > 0 and 1 or -1), 0, C.mac.NUM_SLOTS * 3)  -- E2 = linear: AMOUNT + 9 cells
     elseif n == 3 then
-      if macro_sel == 0 then pdelta("dronage_macro_amount", d) else macro_edit(macro_sel, d) end   -- E3 = tweak
+      if macro_sel == 0 then pdelta("dronage_macro_amount", d)   -- amount = live knob, not undo-tracked
+      else macro_edit(macro_sel, d); touched() end   -- E3 = tweak
     end
   elseif k == "scenes" then
     if n == 2 then scur = util.clamp(scur + d, 1, C.scenes.NUM) end
@@ -1098,16 +1129,31 @@ function S.key(n, z)
   if n == 1 then
     if z == 1 then k1held = true; jump = cur; k1_consumed = false   -- fall through to the combo check
     else
-      if not k1_consumed then cur = jump end   -- a consumed combo must not navigate on release
+      if not k1_consumed and cur ~= jump then
+        cur = jump
+        if C.rand then C.rand.nav() end   -- leaving a page re-arms its randomize alternation
+      end
       k1held = false; k1_consumed = false       -- release always clears the consumed flag
       return
     end
-  elseif n == 2 then k2held = (z == 1)
+  elseif n == 2 then k2held = (z == 1); if z == 1 then undo_dir = 0 end   -- fresh hold = fresh undo latch
   elseif n == 3 then k3held = (z == 1); if z == 1 then k3_used = false end end
-  -- K1+K2+K3 = randomize the global S&H seed, fired by whichever press completes the trio (norns gates
-  -- K1 by 0.25s so it can arrive last). Consume the hold: no minimap, and release skips navigation.
+  -- K1+K2+K3 = randomize the CURRENT PAGE (curated per-view dice, lib/dronage_norns_random),
+  -- fired by whichever press completes the trio (norns gates K1 by 0.25s so it can arrive last).
+  -- Consume the hold: no minimap, and release skips navigation. Undoable (K2+E1).
   if k1held and k2held and k3held then
-    params:set("dronage_seed", math.random(0, 4095)); toast("RANDOMIZED SEED"); k1_consumed = true
+    k1_consumed = true
+    if C.rand then
+      local vw = VIEWS[cur]
+      local focus   -- matrix: the focused row's voice; CV seq: the cursor's track
+      if vw.kind == "matrix" then
+        focus = C.mtx.dests[mvis[util.clamp(cursor[cur] or 1, 1, #mvis)].di].voice
+      elseif vw.kind == "modseq" then
+        focus = util.clamp(cursor[cur] or 1, 1, C.seq.NUM_TRACKS)
+      end
+      local msg = C.rand.page(vw, focus)
+      if msg then toast(msg) end
+    end
     return
   end
   -- PROJECT view: K1+K2 = save under a fresh random name (no keyboard); wins over minimap transport
@@ -1163,6 +1209,7 @@ function S.key(n, z)
         if v.kind == "matrix" then C.mtx.set_cell(mvis[util.clamp(cursor[cur] or 1, 1, #mvis)].di, msrc, 0)
         elseif v.kind == "modseq" then seq_reset_cell(cursor[cur] or 1, seqcol)
         else macro_reset() end
+        touched()
         k2_eaten, k3_eaten = true, true
       end
     elseif n == 2 then
@@ -1186,34 +1233,47 @@ function S.key(n, z)
         else
           local slot = scur   -- ask before initializing a scene
           confirm = { kind = "scenes", prompt = { "INITIALIZE SCENE " .. slot .. "?" },
-                      action = function() C.scenes.clear(slot); toast("CLEARED " .. slot) end }
+                      action = function()
+                        C.undo.around("SCENE INIT", function() C.scenes.clear(slot) end)
+                        toast("CLEARED " .. slot)
+                      end }
         end
         k2_eaten, k3_eaten = true, true
       end
     elseif n == 2 then
       if k2_eaten then k2_eaten = false
       elseif v.kind == "project" then project_save()
-      else C.scenes.switch(scur); toast("RECALLED " .. scur) end
+      else
+        if scur ~= C.scenes.current then   -- same slot = no-op in switch(); don't checkpoint it
+          C.undo.around("SCENE", function() C.scenes.switch(scur) end)
+        end
+        toast("RECALLED " .. scur)
+      end
     else
       if k3_eaten then k3_eaten = false
       elseif v.kind == "project" then project_activate(util.clamp(cursor[cur] or 1, 1, #project_items()))
       else
         -- storing over ANOTHER slot's saved snapshot is destructive -> confirm. The current slot is
         -- the routine "save my tweaks" (and autosaves on switch anyway), so it stays prompt-free.
+        local function store()
+          C.undo.around("SCENE STORE", function() C.scenes.store(scur) end); toast("STORED " .. scur)
+        end
         if C.scenes.slots[scur] ~= nil and scur ~= C.scenes.current then
-          confirm = { kind = "scenes", prompt = { "OVERWRITE SCENE " .. scur .. "?" },
-                      action = function() C.scenes.store(scur); toast("STORED " .. scur) end }
-        else C.scenes.store(scur); toast("STORED " .. scur) end
+          confirm = { kind = "scenes", prompt = { "OVERWRITE SCENE " .. scur .. "?" }, action = store }
+        else store() end
       end
     end
     return
   end
 
-  -- remaining views (home): K2/K3 act on press
-  if z ~= 1 then return end
+  -- remaining views (home): K2 = play/stop on RELEASE (so a K2+E1 undo turn doesn't also
+  -- toggle transport - the eaten flag swallows it, same pattern as every other view);
+  -- K3 = gate toggle on press.
   if v.kind == "home" then
-    if n == 2 then C.set_transport(not C.transport())   -- K2 = play/stop
-    elseif n == 3 then                                   -- K3 = toggle the focused voice's gate
+    if n == 2 and z == 0 then
+      if k2_eaten then k2_eaten = false
+      else C.set_transport(not C.transport()) end
+    elseif n == 3 and z == 1 then
       local i = util.clamp(cursor[cur] or 1, 1, C.eng.NUM_VOICES)
       params:set("v" .. i .. "_gate", (params:get("v" .. i .. "_gate") == 1) and 0 or 1)
     end
