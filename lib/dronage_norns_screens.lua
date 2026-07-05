@@ -130,6 +130,7 @@ local top = {}           -- [lin] = panel scroll top
 -- column jump keeps your place on the same voice/param row.
 local function mcol() local v = VIEWS[cur]; return (v and v.src) or 1 end
 local mrow = 1
+local mtop = 1   -- shared scroll top too: per-view top[] would make the window jump on column changes
 local scur = 1           -- scenes cursor
 local seqcol = 1         -- modseq: selected column (1-5 steps, 6 div, 7 len, 8-13 = 2x(osc,par,amt))
 local macro_sel = 0      -- macro: linear focus - 0 = AMOUNT, 1-9 = the 9 destination cells (3 slots x osc/param/depth)
@@ -578,9 +579,9 @@ local function draw_matrix(lin)
   local c = util.clamp(mrow, 1, n); mrow = c
   -- focused-cell depth as a percentage, in the empty band just below the title (left of the scopes)
   screen.level(8); screen.move(2, 13); screen.text(string.format("%.1f%%", (C.mtx.cell[mvis[c].di][mc] or 0) * 100))
-  local t = top[lin] or 1
+  local t = mtop
   if c < t then t = c elseif c > t + 4 then t = c - 4 end
-  t = util.clamp(t, 1, math.max(1, n - 4)); top[lin] = t
+  t = util.clamp(t, 1, math.max(1, n - 4)); mtop = t
   screen.aa(1)
   for row = 0, 4 do
     local i = t + row
