@@ -356,7 +356,8 @@ local function draw_cb(now, st)
   led(13, 5, (st.rst_ok and not lock) and 8 or 0)              -- RST
   led(14, 5, (st.rnd_ok and not lock) and 8 or 0)              -- RND
   led(15, 5, lock and blink or (st.playing and INACT or ACT))  -- NO  = STOP; lit while stopped
-  led(16, 5, lock and blink or (st.playing and ACT or INACT))  -- YES = PLAY; lit while playing
+  led(16, 5, lock and blink or (st.armed and blink)            -- YES blinks while quantized PLAY is armed,
+    or (st.playing and ACT or INACT))                          -- then lit while playing
   led(13, 6, shift and ACT or INACT)                           -- SHIFT
   led(14, 6, lock and 0 or (st.map_held and ACT or INACT))     -- MAP
   led(15, 6, 6); led(16, 6, 6)                               -- UNDO REDO

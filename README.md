@@ -26,6 +26,7 @@ Four voices built on a famous open-source macro synth module, each with its own 
    - [DELAY · REVERB · MASTER FX](#delay--reverb--master-fx)
    - [MACRO CONTROLLER](#macro-controller)
    - [SCENES](#scenes)
+   - [LIVE LOOPER](#live-looper)
    - [GLOBAL](#global)
    - [PROJECT](#project)
 8. [The grid](#8-the-grid)
@@ -93,7 +94,7 @@ norns gives you **three encoders** (E1, E2, E3), **three keys** (K1, K2, K3), an
 | **E3**  | change the focused value                                            |
 | **K1**  | **hold** = open the minimap to jump between screens                  |
 | **K2**  | **transport play/stop** on most screens (SCENES: recall · PROJECT: save) |
-| **K3**  | per-screen action: gate toggle (HOME/VOICE/EUCLID) · store (SCENES) · load (PROJECT) |
+| **K3**  | per-screen action: gate toggle (HOME/VOICE/EUCLID) · store (SCENES) · load (PROJECT) · record (LIVE LOOPER) |
 | **K2+K3** | reset / clear / delete the focused thing                          |
 
 Global gestures, available from **any** screen:
@@ -121,7 +122,7 @@ Two extras while the minimap is up:
 - **K2** toggles the transport (play/stop), same as K2 on HOME - so you can start/stop from anywhere. (On PROJECT the K1+K2 quick-save wins.)
 - **Hold K3** and the "minimap" label in the top-right becomes **MASTER VOL: 100%** - turn **E1** to set it; release K3 and the label reverts. Master volume is the very last gain after the whole master chain; it is never saved with scenes or projects.
 
-You can also flip between **siblings in the same row without the minimap**: just turn **E1**. On VOICE 2 it walks V1↔V2↔V3↔V4; on LFO 3 it walks the eight LFOs; on DELAY it walks DELAY↔REVERB↔MASTER FX; on MACRO it walks MACRO↔CV SEQ↔SCENES. On MOD MATRIX the row's siblings ARE the eight LFO columns, so E1 moves the focused LFO. (One exception: on HOME, E1 cycles the visualizers.)
+You can also flip between **siblings in the same row without the minimap**: just turn **E1**. On VOICE 2 it walks V1↔V2↔V3↔V4; on LFO 3 it walks the eight LFOs; on DELAY it walks DELAY↔REVERB↔MASTER FX; on MACRO it walks MACRO↔CV SEQ↔SCENES↔LIVE LOOPER. On MOD MATRIX the row's siblings ARE the eight LFO columns, so E1 moves the focused LFO. (One exception: on HOME, E1 cycles the visualizers.)
 
 The grid:
 
@@ -133,7 +134,7 @@ The grid:
 | 4   | **LFO 1 … 8**                                       |
 | 5   | **MOD MATRIX** ×8 - one cell per LFO column, so you can jump straight to any LFO's column; your destination row is kept |
 | 6   | **DELAY · REVERB · MASTER FX**                      |
-| 7   | **MACRO CONTROLLER · CV SEQUENCER · SCENES**        |
+| 7   | **MACRO CONTROLLER · CV SEQUENCER · SCENES · LIVE LOOPER**        |
 | 8   | **GLOBAL · PROJECT**                                |
 
 You always know where you are: every screen with siblings draws a row of small **position dots** in its top-right corner - one per screen in that row, with yours highlighted.
@@ -148,7 +149,7 @@ Most screens speak the same language, so once you learn one you know them all:
 
 - **E2 selects**: moves the cursor down a list, or across the rows of a grid.
 - **E3 sets**: changes the value the cursor is on.
-- **K2 plays/stops**: on every screen except SCENES (recall) and PROJECT (save), a lone K2 toggles the transport. It acts on **release**, so any chord that includes K2 swallows it - no accidental stops.
+- **K2 plays/stops**: on every screen except SCENES (recall) and PROJECT (save), a lone K2 toggles the transport. It acts on **release**, so any chord that includes K2 swallows it - no accidental stops. **PLAY waits for the next beat** (the play indicator blinks while it waits) so sequences, loops, and any Link'd gear all start on the same grid; STOP is instant.
 - **K2+K3 resets**: clears the focused cell/parameter back to nothing/zero/default. (Pressing both cancels the single-key actions.)
 
 On the **list screens** (VOICE, EUCLID, LFO, and the FX/GLOBAL panels) **K2+K3 resets the highlighted parameter** to its default. Nothing lives on columns any more: the MOD MATRIX moves its LFO column with **E1**, and the CV SEQUENCER and MACRO walk every cell linearly with **E2**.
@@ -384,6 +385,35 @@ Switching scenes saves your current work back into the slot you're leaving, so e
 
 Initializing a scene is destructive, so it asks first with a full-screen **INITIALIZE SCENE N?** (K2 = no, K3 = yes), the same confirmation as project overwrite and delete. Storing over **another** slot's saved snapshot asks too (**OVERWRITE SCENE N?**); storing into the current slot never asks - that's the routine "save my tweaks".
 
+### LIVE LOOPER
+
+One master looper, Octatrack-style: it records **everything you hear** - all four voices through the delays, reverb, and the tape stage - as one seamless, clock-locked loop, and a big crossfader morphs between the live engine and the loop. The move it exists for: capture the current drone, fade to the loop, rebuild your sound (or jump to another scene) while the loop carries the room, then slowly fade back.
+
+![LIVE LOOPER: the crossfader over the loop status, playhead, and settings](docs/img/looper.png)
+
+The big slider on top is the **crossfader** (equal power, live on the left, loop on the right). Below it: the loop status with a playhead sweep, then **LENGTH** (recording length in beats: 4 to 128), **QUANTIZE** (the grid punches and launches snap to: 1-8 beats, aligned to the transport phrase while playing), **OVERDUB FB** (how much of the existing loop survives each overdub pass: 100% = layers stack forever, lower = older layers fade with every pass, 0% = the pass replaces the loop), and **ERASE BUFFER**.
+
+| Control   | Action                                                             |
+|-----------|--------------------------------------------------------------------|
+| **E2**    | move between the crossfader and the rows                          |
+| **E3**    | ride the crossfader / change the highlighted setting              |
+| **K3**    | the looper verb: empty = **record** (arms, punches in on the grid) · recording = **stop early** (punches out at the next quantize boundary) · filled = **overdub** one pass · on ERASE BUFFER = erase (asks first) |
+| **K2**    | transport play/stop, as everywhere                                |
+| **K2+K3** | reset the highlighted setting to its default                      |
+
+Recording runs to LENGTH and punches out by itself; **K3 during recording punches out early** at the next quantize boundary instead - so LENGTH 128 with an early K3 is effectively free-length capture. Either way the loop starts playing the instant the recording closes, seamlessly, no gap. Re-recording over a filled loop crossfades the new take in; overdubbing layers into it (freshly dubbed material is heard from the next pass around). The loop keeps perfect time through tempo-drift and long sets - and it keeps sounding when you stop the transport.
+
+The crossfader is a **param** (`loop crossfade` under "live looper" in PARAMETERS), so you can MIDI-map it to a physical fader via PARAMETERS > MAP. Like master volume it is never saved - a live-room control.
+
+Worth knowing:
+
+- **Recording captures the live side as you hear it.** Fading the live side down also fades what the recorder receives (that's how norns routes audio - there is no separate record tap), so recording while fully faded to the loop captures silence; the looper warns (**LIVE SIDE IS FADED OUT**) but obeys.
+- **Loops survive project loads.** The move that makes this a set instrument: capture a loop, fade to it, **load a different project**, build the new track, fade back. The loop (and the crossfader position) sails straight through. Match the BPMs - or turn on **Keep BPM On Load** (GLOBAL) so the incoming project can't re-tempo a sounding loop.
+- **Loops are performance objects, not documents**: they live in memory only. Reloading the script, switching scripts, updating, or powering off ends them. Scenes and projects don't store them either (the crossfade and loop settings aren't part of scenes; the loop settings do persist in the system PSET).
+- **Tempo changes after capture**: the loop keeps its recorded audio and stays locked to the grid, so at a new tempo it truncates its tail (faster) or briefly stutters its head (slower) each cycle - graceful, but for big jumps just re-record. Jumping between scenes at the **same** tempo is seamless.
+- The HOME visualizers watch the engine, so while you're faded to the loop they show the (silent) live side, not the loop.
+- **Original norns / Fates**: the looper is disabled on those boards by default - its CPU load there is untested. To try it anyway, edit `dronage-norns.lua` and set `DRONAGE_LOOPER_ON_LITE = true` near the top; if it runs well, tell us on [the thread](https://llllllll.co/t/dronage-norns/74914) and it'll ship enabled for everyone.
+
 ### GLOBAL
 
 Project-wide settings. A simple list (**E2** scroll, **E3** value, **K2+K3** reset).
@@ -398,6 +428,7 @@ Project-wide settings. A simple list (**E2** scroll, **E3** value, **K2+K3** res
 | **Mod Depth**        | global scaler on all modulation                       |
 | **Seed**             | the random/S&H seed (K1+K2+K3 here, or on an S&H SEED LFO's screen, re-rolls it) |
 | **S&H Seed Start 0** | pin the first step of every S&H SEED loop to 0, so seeded melodies always start from the unmodulated base note |
+| **Keep BPM On Load** | hold the current tempo through project load / new (off by default; never saved). For live sets: crossfade between projects over a sounding loop without the incoming project re-tempoing it |
 | **Grid Brightness**  | 3-level LED dimmer for the attached monome grid (this row only appears while one is connected; never saved - a live-room knob like master volume) |
 
 `Root` and `Scale` set the musical grid: with a scale active, voice **Pitch** steps note-by-note and stays in key; set `Scale` to **Off** for chromatic pitch.
@@ -440,7 +471,7 @@ Plug in a **monome grid 128** (16×8, varibright) and dronage mirrors itself ont
  4 |  L1   L2   L3   L4   L5   L6   L7   L8   ·    ·    ·    ·    ·    ·    ·    ·
  5 |  MM   MM   MM   MM   MM   MM   MM   MM   ·    ·    ·    ·  RST  RND   NO  YES
  6 |  DLY  RVB  MST  ·    ·    ·    ·    ·    ·    ·    ·    ·  SHF  MAP  UNDO REDO
- 7 |  MAC  CV   SCN  ·    ·    ·    ·    ·    ·    ·    ·    ·   +    ◀◀    ▲   ▶▶
+ 7 |  MAC  CV   SCN  LL   ·    ·    ·    ·    ·    ·    ·    ·   +    ◀◀    ▲   ▶▶
  8 |  GLB  PRJ  ·    ·    ·    ·    ·    ·    ·    ·    ·    ·   -    ◀     ▼    ▶
 ```
 
@@ -467,7 +498,7 @@ Top-right, matching the SCENES screen's own 2×4 layout. **Press = recall** that
 | **◀ ▶** | move horizontally where the screen has a horizontal: MOD MATRIX = LFO column, CV SEQUENCER = cell, MACRO = slot cells, SCENES = across slots, HOME = voice toggles. Dark elsewhere |
 | **◀◀ ▶▶** | previous / next sibling screen, wrapping (hold to flip through all eight LFOs); on HOME they cycle the visualizers |
 | **+ −** | nudge the focused value, exactly like E3 - same per-parameter feel, scale-aware pitch stepping included. Hold for key-repeat that starts slow and accelerates |
-| **SHF** | the modifier. Held: **+/−** go coarse (much faster, and 10× faster still on matrix depths), **▲/▼** on the matrix jump a whole voice (same parameter), voice pads toggle gates, scene pads copy/paste. **Tapped alone**: the screen's K3-style action - gate toggle on HOME/VOICE/EUCLID, store on SCENES, load on PROJECT |
+| **SHF** | the modifier. Held: **+/−** go coarse (much faster, and 10× faster still on matrix depths), **▲/▼** on the matrix jump a whole voice (same parameter), voice pads toggle gates, scene pads copy/paste. **Tapped alone**: the screen's K3-style action - gate toggle on HOME/VOICE/EUCLID, store on SCENES, load on PROJECT, record/overdub on LIVE LOOPER |
 | **MAP** | hold = the minimap pops up on the norns screen; steer the highlight with the arrows, release to jump there |
 | **UNDO REDO** | one history step per tap, same 10-level history as K2+E1 |
 | **RST** | the screen's K2+K3 reset: parameter to default, matrix/CV cell to zero, scene initialize / project delete (their confirm dialogs appear; answer with YES/NO) |
@@ -533,6 +564,7 @@ Start with modest depths and slow rates. The magic is in the interplay of a few 
 | CV SEQUENCER  | play / stop     | -               | reset cell (E2 walks all cells) |
 | MACRO         | play / stop     | -               | reset slot       |
 | SCENES        | recall slot     | store slot      | initialize (confirm) |
+| LIVE LOOPER   | play / stop     | record / stop early / overdub (ERASE row: erase, confirm) | reset setting |
 | PROJECT       | save / overwrite| load / new      | delete           |
 | LFO · FX · GLOBAL | play / stop | -               | reset parameter  |
 

@@ -271,7 +271,7 @@ trig   = TDelay.kr(t_trig, 0.004);   // dronage-tui: the audible trigger fires ~
 		SynthDef(\dronageNornsSC_tape, {
 			arg out = 0, mixBus = 0, wobbleBuf, compressBuf, scopeBuf,
 				drive = 0, sat = 0.25, satamt = 0.5, color = 0.3, wow = 0.15, comp = 0.3, db = 0,
-				loss = 0, chew = 0, degrade = 0, hiss = 0, mastervol = 1, hissBuf = 0;
+				loss = 0, chew = 0, degrade = 0, hiss = 0, mastervol = 1, hissBuf = 0, duck = 1;
 			var snd, pw, pr, wobbled, rate;
 			snd = In.ar(mixBus, 2);
 			snd = (snd * drive.dbamp).clip2(8);                             // input drive (dB), guarded:
@@ -330,6 +330,10 @@ trig   = TDelay.kr(t_trig, 0.004);   // dronage-tui: the audible trigger fires ~
 			snd = BHiPass.ar(snd, 200) + Pan2.ar(BLowPass.ar(snd[0] + snd[1], 200));
 			snd = snd.tanh * db.dbamp;
 			snd = snd * Lag.kr(mastervol.clip(0, 1), 0.05);   // master volume: the very last gain
+			// live-looper crossfader duck: engine-owned so it never fights the master-vol control.
+			// NOTE this also scales what softcut records (crone taps the jack out post-everything;
+			// level_eng_cut is serial after level_eng - no independent record tap exists on norns).
+			snd = snd * Lag.kr(duck.clip(0, 1), 0.05);
 			// master safety net: zap any NaN/inf and hard-clip so the hardware out can never get a
 			// runaway value (protects ears/speakers regardless of what any stage upstream does).
 			snd = snd.collect { |ch| Select.ar(CheckBadValues.ar(ch, 0, 0), [ch, DC.ar(0), DC.ar(0), ch]) };
@@ -460,6 +464,7 @@ trig   = TDelay.kr(t_trig, 0.004);   // dronage-tui: the audible trigger fires ~
 		this.addCommand(\tapedegrade, "f", { arg msg; tapeSynth.set(\degrade, msg[1]); });
 		this.addCommand(\tapehiss,  "f", { arg msg; tapeSynth.set(\hiss, msg[1]); });
 		this.addCommand(\mastervol, "f", { arg msg; tapeSynth.set(\mastervol, msg[1]); });
+		this.addCommand(\duck, "f", { arg msg; tapeSynth.set(\duck, msg[1]); });
 
 		// Model selector: "ii" = (int voice, int model 0-23). Not smoothed (clicks on change).
 		this.addCommand(\engine, "ii", { arg msg;

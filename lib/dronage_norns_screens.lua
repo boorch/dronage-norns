@@ -80,7 +80,7 @@ local REVERB = {"dronage_reverb_shimmer","dronage_reverb_size","dronage_reverb_t
                 "dronage_reverb_damp","dronage_reverb_diff","dronage_reverb_fb","dronage_reverb_mod"}
 local TAPE = {"dronage_tape_age","dronage_tape_hiss","dronage_tape_compression","dronage_master_vol"}   -- chain order
 -- MACRO is now a custom view (kind "macro"); only the master amount remains a param.
-local GLOBAL = {"clock_tempo","dronage_root","dronage_scale","mod_depth","dronage_seed","dronage_sh_anchor","dronage_grid_bright"}
+local GLOBAL = {"clock_tempo","dronage_root","dronage_scale","mod_depth","dronage_seed","dronage_sh_anchor","dronage_keep_bpm","dronage_grid_bright"}
 
 -- ---------- view registry (flat, linear order = K1 scroll order) ----------
 local VIEWS = {}      -- [lin] = {name, tag, kind, row, col, ids?, n?, src?}
@@ -134,6 +134,7 @@ local mtop = 1   -- shared scroll top too: per-view top[] would make the window 
 local scur = 1           -- scenes cursor
 local seqcol = 1         -- modseq: selected column (1-5 steps, 6 div, 7 len, 8-13 = 2x(osc,par,amt))
 local macro_sel = 0      -- macro: linear focus - 0 = AMOUNT, 1-9 = the 9 destination cells (3 slots x osc/param/depth)
+local looper_sel = 0     -- looper: linear focus - 0 = the crossfade gauge, 1-3 = length/quantize/od fb, 4 = erase row
 local PANEL_VIS = 6   -- reclaimed top margin lets us show 6 param rows
 local oct_acc = 0     -- K2+E3 octave-jump accumulator (2 detents per jump, direction-reset)
 
@@ -150,6 +151,7 @@ local PLABEL = {
   dronage_tape_age = "Tape Age", dronage_tape_hiss = "Hiss",
   dronage_tape_compression = "Compression", dronage_master_vol = "Master Volume",
   dronage_grid_bright = "Grid Brightness",
+  dronage_keep_bpm = "Keep BPM On Load",
 }
 local function short(id)
   local s = id:gsub("^v%d+_",""):gsub("^lfo%d+_",""):gsub("^dronage_%a+_",""):gsub("^dronage_",""):gsub("^clock_","")
@@ -452,8 +454,15 @@ end
 -- toggle, K3 flips it, K2 = play/stop.
 local function draw_home()
   screen.level(15); screen.move(2, 5); screen.text("DRONAGE-NORNS")
-  screen.level(C.transport() and 15 or 4); screen.move(126, 5)
-  screen.text_right(C.transport() and "play" or "stop")
+  -- PLAY is beat-quantized: "armed" blinks until the boundary lands (STOP stays instant)
+  local armed = C.transport_armed and C.transport_armed()
+  if armed then
+    screen.level((util.time() * 3) % 1 < 0.6 and 15 or 2); screen.move(126, 5)
+    screen.text_right("play")
+  else
+    screen.level(C.transport() and 15 or 4); screen.move(126, 5)
+    screen.text_right(C.transport() and "play" or "stop")
+  end
   if home_viz == 1 then draw_spectrogram()   -- middle: main-out visualizer (E1 cycles)
   elseif home_viz == 2 then draw_vectorscope()
   elseif home_viz == 3 then draw_styx()
@@ -521,7 +530,8 @@ local STEPY, EPY, EVIS = 7, 29, 5   -- steps grid top; param-list baseline (2px 
 local function draw_steps(v)
   local e = C.euclid.tracks and C.euclid.tracks[v]
   if not (e and e.patLen and e.patLen > 0) then return end
-  local playing = C.transport()
+  -- armed (quantized PLAY pending) is not playing yet: cur_step is stale from the last run
+  local playing = C.transport() and not (C.transport_armed and C.transport_armed())
   for idx = 0, math.min(e.patLen, 32) - 1 do
     local x = (idx % 16) * 8
     local y = STEPY + (idx >= 16 and 8 or 0)
@@ -820,6 +830,69 @@ local function draw_scenes(lin)
   screen.level(3); screen.move(2, 62); screen.text("E2 sel  K2 recall  K3 store")
 end
 
+-- LIVE LOOPER: crossfade gauge on top (MACRO's AMOUNT recipe, unipolar live->loop), loop
+-- status + playhead strip under it, then the setting rows + the ERASE action row. One master
+-- loop of the engine output - no slots, no per-voice anything (lib/dronage_norns_looper.lua).
+local LP_ROWS = { "LENGTH", "QUANTIZE", "OVERDUB FB", "ERASE BUFFER" }
+local LP_IDS  = { "lp_len", "lp_quant", "lp_od_pre" }   -- row 4 (erase) has no param
+
+local function confirm_erase()
+  confirm = { kind = "looper", prompt = { "ERASE LOOP BUFFER?" },
+    action = function()
+      local ok, msg = C.looper.erase()
+      toast(ok and "BUFFER ERASED" or msg)
+    end }
+end
+
+local function draw_looper(lin)
+  if confirm and confirm.kind == "looper" then draw_confirm(confirm); return end
+  header("LIVE LOOPER", lin)
+  local lp = C.looper
+  local x = params:get("lp_xfade")
+  local xf = (looper_sel == 0)
+
+  -- gauge: LIVE ... state ... LOOP labels, then the fader bar with a handle
+  screen.level(x < 0.5 and 10 or 3); screen.move(10, 15); screen.text("LIVE")
+  screen.level(x >= 0.5 and 10 or 3); screen.move(118, 15); screen.text_right("LOOP")
+  -- the status slot doubles as the key legend (the footer line is spent on the rows)
+  local st
+  if lp.state == "armed" then st = "ARMED"
+  elseif lp.state == "rec" then st = lp.out_pending and "REC > OUT" or "REC (K3 OUT)"
+  elseif lp.filled then st = string.format("%gb (K3 DUB)", lp.beats)
+  else st = "K3 = REC" end
+  local blink = (lp.state == "idle") or ((util.time() * (lp.state == "rec" and 3 or 1.5)) % 1 < 0.6)
+  screen.level(blink and (lp.state == "idle" and 6 or 15) or 2)
+  screen.move(64, 15); screen.text_center(st)
+  screen.level(2); screen.rect(10, 20, 108, 7); screen.stroke()
+  local fw = util.round(x * 104)
+  screen.level(xf and 15 or 8)
+  if fw > 0 then screen.rect(12, 22, fw, 3); screen.fill() end
+  screen.rect(11 + fw, 19, 2, 9); screen.fill()                   -- handle
+  if xf then screen.level(15); screen.rect(8, 10, 112, 20); screen.stroke() end
+
+  -- playhead strip: the loop cycle sweeping left to right (only when something is recorded)
+  if lp.filled then
+    screen.level(1); screen.rect(10, 32, 108, 2); screen.fill()
+    screen.level(12); screen.rect(10 + util.round(lp.phase * 106), 31, 2, 4); screen.fill()
+  end
+
+  -- rows: LENGTH / QUANTIZE / OVERDUB FB / ERASE BUFFER
+  local LP_LEN, LP_Q = { "4", "8", "16", "32", "64", "128" }, { "1", "2", "4", "8" }
+  local vals = {
+    LP_LEN[params:get("lp_len")] .. " beats",
+    LP_Q[params:get("lp_quant")] .. (params:get("lp_quant") == 1 and " beat" or " beats"),
+    util.round(params:get("lp_od_pre") * 100) .. "%",
+    "",
+  }
+  for i = 1, 4 do
+    local y = 41 + (i - 1) * 7
+    local f = (looper_sel == i)
+    screen.level(f and 15 or 4)
+    screen.move(10, y); screen.text(LP_ROWS[i])
+    screen.move(118, y); screen.text_right(vals[i])
+  end
+end
+
 -- PROJECT browser: a scrollable list of saved projects + a "new" entry. E2 scroll · K3 load (or NEW
 -- on the top entry) · K2 save (overwrite the loaded project, or name a new one) · K2+K3 delete ·
 -- K1+K3 save under a fresh random name. Naming uses the built-in textentry (random pre-fill + an
@@ -855,6 +928,18 @@ local function project_save()
   end
 end
 
+-- "Keep BPM On Load" (GLOBAL): hold the room's tempo through project loads and NEW - the
+-- incoming pset would otherwise re-tempo a sounding live loop mid-crossfade. Live-room
+-- toggle (never saved); normal per-scene tempo switching is untouched.
+local function hold_bpm(fn)
+  return function()
+    local keep = params:get("dronage_keep_bpm") == 2
+    local t = keep and params:get("clock_tempo")
+    fn()
+    if keep then params:set("clock_tempo", t) end
+  end
+end
+
 local function project_activate(idx)
   -- both paths replace the live (possibly unsaved) state -> ask first, like overwrite/delete.
   -- Both are undo-checkpointed too (the entry carries the scene slots), so even a confirmed
@@ -868,7 +953,7 @@ local function project_activate(idx)
       C.undo.around("PROJECT LOAD", function() C.project.load(n) end); toast("LOADED " .. n)
     end
   end
-  confirm = { kind = "project", prompt = { "LOSE UNSAVED CHANGES?" }, action = go }
+  confirm = { kind = "project", prompt = { "LOSE UNSAVED CHANGES?" }, action = hold_bpm(go) }
 end
 
 local function draw_project(lin)
@@ -998,6 +1083,7 @@ function S.init(ctx)
   add(6, 0, "DELAY", "DL", "panel", {ids = DELAY}); add(6, 1, "REVERB", "RV", "panel", {ids = REVERB})
   add(6, 2, "MASTER FX", "M", "panel", {ids = TAPE})
   add(7, 0, "MACRO CONTROLLER", "MC", "macro"); add(7, 1, "CV SEQUENCER", "CS", "modseq"); add(7, 2, "SCENES", "S", "scenes")
+  if C.looper then add(7, 3, "LIVE LOOPER", "LL", "looper") end   -- absent on LITE (flag-gated)
   add(8, 0, "GLOBAL", "GL", "panel", {ids = GLOBAL}); add(8, 1, "PROJECT", "PR", "project")
 end
 
@@ -1021,6 +1107,7 @@ function S.redraw()
     elseif k == "matrix" then draw_matrix(cur)
     elseif k == "modseq" then draw_modseq(cur)
     elseif k == "macro" then draw_macro(cur)
+    elseif k == "looper" then draw_looper(cur)
     elseif k == "scenes" then draw_scenes(cur)
     elseif k == "project" then draw_project(cur)
     elseif k == "lfo" then draw_lfo(cur)
@@ -1044,6 +1131,12 @@ local function tweak_view(v, d)
   elseif k == "macro" then
     if macro_sel == 0 then pdelta("dronage_macro_amount", d)   -- amount = live knob, not undo-tracked
     else macro_edit(macro_sel, d); touched() end
+  elseif k == "looper" then
+    if k3held then k3_used = true end   -- editing during a K3 hold: release must not fire record
+    if looper_sel == 0 then pdelta("lp_xfade", d)              -- fader = live knob, not undo-tracked
+    elseif looper_sel <= 2 then pdelta(LP_IDS[looper_sel], d > 0 and 1 or -1)   -- option lists: one entry per detent
+    elseif looper_sel == 3 then pdelta("lp_od_pre", d) end
+    -- erase row: nothing to tweak
   elseif k == "panel" or k == "lfo" or k == "euclid" then
     local ids = view_ids(v)   -- LFO sync/shape filtering + GLOBAL grid-row filtering
     local id = ids[util.clamp(cursor[cur] or 1, 1, #ids)]
@@ -1221,6 +1314,8 @@ function S.enc(n, d)
     seqcol = (lin - 1) % SEQ_NCOL + 1
   elseif k == "macro" then
     macro_sel = util.clamp(macro_sel + (d > 0 and 1 or -1), 0, C.mac.NUM_SLOTS * 3)  -- linear: AMOUNT + 9 cells
+  elseif k == "looper" then
+    looper_sel = util.clamp(looper_sel + (d > 0 and 1 or -1), 0, #LP_ROWS)   -- gauge + 3 settings + erase
   elseif k == "scenes" then
     scur = util.clamp(scur + d, 1, C.scenes.NUM)
   elseif k == "project" then
@@ -1327,6 +1422,27 @@ function S.key(n, z)
     return
   end
 
+  -- LOOPER: K3 release = record / overdub / early punch-out (on the ERASE row it opens the
+  -- confirm instead); K2 release = transport; K2+K3 = reset the focused setting, as usual.
+  if v.kind == "looper" and (n == 2 or n == 3) then
+    if z == 1 then
+      if k2held and k3held then
+        local id = (looper_sel == 0) and "lp_xfade" or LP_IDS[looper_sel]
+        if id then reset_param(id) end   -- erase row: chord does nothing (erase = row + confirm)
+        k2_eaten, k3_eaten = true, true
+      end
+    elseif n == 2 then
+      if k2_eaten then k2_eaten = false
+      else C.set_transport(not C.transport()) end
+    else
+      if k3_eaten then k3_eaten = false
+      elseif k3_used then k3_used = false            -- K3 hold was spent as the E3 modifier
+      elseif looper_sel == #LP_ROWS then confirm_erase()
+      else C.looper.record() end
+    end
+    return
+  end
+
   -- scenes + project: K2/K3 act on RELEASE so the K2+K3 chord (init/delete) can pre-empt them.
   if (v.kind == "scenes" or v.kind == "project") and (n == 2 or n == 3) then
     if z == 1 then
@@ -1402,6 +1518,8 @@ function S.grid_nav(dx, dy, coarse)
     scur = r * 4 + c2 + 1
   elseif k == "project" then
     if dy ~= 0 then cursor[cur] = util.clamp((cursor[cur] or 1) + dy, 1, #project_items()) end
+  elseif k == "looper" then
+    if dy ~= 0 then looper_sel = util.clamp(looper_sel + dy, 0, #LP_ROWS) end
   else  -- panel / lfo / euclid lists
     if dy ~= 0 then
       local ids = view_ids(v)
@@ -1445,6 +1563,9 @@ function S.grid_reset()
     C.mtx.set_cell(mvis[util.clamp(mrow, 1, #mvis)].di, mcol(), 0); touched()
   elseif k == "modseq" then seq_reset_cell(cursor[cur] or 1, seqcol); touched()
   elseif k == "macro" then macro_reset(); touched()
+  elseif k == "looper" then
+    local id = (looper_sel == 0) and "lp_xfade" or LP_IDS[looper_sel]
+    if id then reset_param(id) end
   elseif k == "scenes" then confirm_scene_init()
   elseif k == "project" then confirm_project_delete() end
   -- home: no-op (the pad renders dark there)
@@ -1500,6 +1621,8 @@ function S.grid_execute()
     params:set("v" .. vnum .. "_gate", (params:get("v" .. vnum .. "_gate") == 1) and 0 or 1)
   elseif k == "scenes" then scene_store()
   elseif k == "project" then project_activate(util.clamp(cursor[cur] or 1, 1, #project_items()))
+  elseif k == "looper" then
+    if looper_sel == #LP_ROWS then confirm_erase() else C.looper.record() end
   end
 end
 
@@ -1557,13 +1680,17 @@ function S.grid_state()
     confirm_up = (confirm ~= nil and confirm.kind == k),
     map_held = map_held,
     playing = C.transport(),
-    rnd_ok = (k ~= "home" and k ~= "project"),
-    tweak_ok = (k ~= "home" and k ~= "scenes" and k ~= "project"),   -- views with a focused value
-    rst_ok = (k ~= "home") and not (k == "project" and (cursor[cur] or 1) <= 1),   -- no project_items(): that scandirs, and this runs at 30 fps
+    armed = (C.transport_armed and C.transport_armed()) or false,   -- quantized PLAY pending
+    rnd_ok = (k ~= "home" and k ~= "project" and k ~= "looper"),
+    tweak_ok = (k ~= "home" and k ~= "scenes" and k ~= "project")
+      and not (k == "looper" and looper_sel >= #LP_ROWS),   -- erase row: nothing to tweak
+    rst_ok = (k ~= "home") and not (k == "project" and (cursor[cur] or 1) <= 1)   -- no project_items(): that scandirs, and this runs at 30 fps
+      and not (k == "looper" and looper_sel >= #LP_ROWS),   -- erase row: chord resets nothing
     nav_x = (k == "matrix" or k == "modseq" or k == "macro" or k == "scenes" or k == "home"),
     nav_y = (k ~= "home"),
   }
 end
 
+S.toast = toast   -- host modules (looper) surface their transient messages through the house toast
 S.VIEWS = VIEWS
 return S

@@ -54,6 +54,10 @@
 -- because matron's Lua VM keeps globals across script reloads - always assigning means
 -- every reload re-resolves the mode; nil = auto-detect).
 DRONAGE_FORCE_LITE = nil
+-- live looper on LITE boards (OG norns / Pi 3 class): disabled by default - the softcut load
+-- is untested on that hardware. Flip to true to opt in and test it there; reports welcome.
+-- (Always-assigned on purpose: matron keeps globals across script reloads.)
+DRONAGE_LOOPER_ON_LITE = false
 local perf = include("dronage-norns/lib/dronage_norns_perf")
 print("dronage-norns: " .. (perf.lite and "LITE" or "FULL") .. " perf mode (" .. perf.model .. ")")
 
@@ -79,6 +83,7 @@ local ui     = include("dronage-norns/lib/dronage_norns_ui")
 local grd    = include("dronage-norns/lib/dronage_norns_grid")
 dronage_grid = grd   -- deliberate global: maiden-REPL inspection/driving (like dronage_undo)
 local euclid = include("dronage-norns/lib/dronage_norns_euclid")
+local looper = include("dronage-norns/lib/dronage_norns_looper")
 local scr    = include("dronage-norns/lib/dronage_norns_screens")
 local D      = include("dronage-norns/lib/dronage_norns_defaults")   -- single source of truth for defaults
 local project_new   -- forward-declared NEW handler; assigned below, passed into the screens UI
@@ -104,16 +109,31 @@ local redraw_metro, mod_clock, seq_clock, euclid_clock
 -- from the top in sync. LFOs keep running while stopped (drone modulation) but reset on PLAY.
 local transport = false
 local transport_start = 0
+local transport_clk        -- pending quantized PLAY ("armed" until the next beat boundary)
 local function mod_beats() return clock.get_beats() - transport_start end
 local function set_transport(play)
-  if play and not transport then
-    transport_start = clock.get_beats()
-    mtx.reset_phases()
-    seq.reset()
-    euclid.reset()
+  if play then
+    if transport or transport_clk then return end
+    -- PLAY quantizes to the next whole beat so sequences, synced LFOs, the live looper and
+    -- external Link gear all share ONE grid. Armed (blinking) until the boundary; STOP is
+    -- instant. transport_start therefore always sits on a whole beat - do NOT backdate it
+    -- (a backdated start would skip step 0's trigger).
+    seq.running = true   -- visible to scene/undo snapshots taken during the armed window;
+                         -- actual stepping stays gated by `transport` in the clock loops
+    transport_clk = clock.run(function()
+      clock.sync(1)
+      transport_start = clock.get_beats()
+      mtx.reset_phases()
+      seq.reset()
+      euclid.reset()
+      transport = true
+      transport_clk = nil
+    end)
+  else
+    if transport_clk then clock.cancel(transport_clk); transport_clk = nil end
+    transport = false
+    seq.running = false
   end
-  transport = play
-  seq.running = play
 end
 local mod_acc = {}
 local mod_result = {}      -- [param_id] = live post-mod value (or nil if unmodulated) -> UI shows it
@@ -306,6 +326,11 @@ function init()
   params:add_separator("dronage_transport_sep", "transport")
   params:add{ type = "binary", id = "dronage_transport", name = "transport (play/stop)",
     behavior = "toggle", default = D.transport, action = function(v) set_transport(v == 1) end }   -- plays on boot
+  -- hold the current tempo through project load / new (GLOBAL row; live crossfading between
+  -- projects over a sounding loop needs the BPM pinned). Live-room toggle: never saved.
+  params:add{ type = "option", id = "dronage_keep_bpm", name = "keep bpm on load",
+    options = { "off", "on" }, default = 1 }
+  params:set_save("dronage_keep_bpm", false)
   eng.quantize = quantize_pitch   -- scale-snap the base pitch as the final step before the engine
   eng.add_params()
   mtx.init(eng.NUM_VOICES)
@@ -322,14 +347,60 @@ function init()
   scenes.add_pset_hooks()
   undo.init({ scenes = scenes, project = project })
   rand.init({ mtx = mtx, seq = seq, mac = mac, scenes = scenes, undo = undo })
+  -- live looper (softcut-backed; lib/dronage_norns_looper.lua). FULL boards only unless the
+  -- DRONAGE_LOOPER_ON_LITE flag at the top opts a LITE board in. When off: no LL view, no
+  -- lp_* params, no softcut/routing touched - zero footprint.
+  local looper_on = (not perf.lite) or (DRONAGE_LOOPER_ON_LITE == true)
+  if looper_on then
+    params:add_separator("dronage_looper_sep", "live looper")
+    params:add_control("lp_xfade", "loop crossfade", controlspec.new(0, 1, 'lin', 0, 0))
+    params:set_action("lp_xfade", function() looper.apply_levels() end)
+    params:set_save("lp_xfade", false)   -- live-room control, never restored (an empty buffer at xfade 1 = silent boot)
+    params:add_option("lp_len", "rec length (beats)", { "4", "8", "16", "32", "64", "128" }, 3)
+    params:add_option("lp_quant", "rec quantize (beats)", { "1", "2", "4", "8" }, 1)
+    params:add_control("lp_od_pre", "overdub feedback", controlspec.new(0, 1, 'lin', 0, 1))
+    looper.init({
+      duck = function(x) engine.duck(x) end,
+      toast = function(m) scr.toast(m) end,
+      -- punch/launch quantize anchor: the transport phrase grid while playing (so q>1
+      -- lands on the sequencer phrase), absolute beats otherwise
+      anchor = function() return transport and transport_start or nil end,
+    })
+    dronage_looper = looper   -- REPL/testing handle, house convention (dronage_undo, dronage_update)
+  end
+  -- clock-source transport events. These fire on a Link peer's start/stop, on MIDI
+  -- START/STOP, AND on the internal source's CLOCK>reset trigger - and every one of them
+  -- re-zeros clock.get_beats(), so all beat anchors must be rebuilt. Rules: if we were
+  -- playing, restart from the top on the NEW grid (the old transport_start is a dead
+  -- frame); if stopped, only an EXTERNAL start may start us (the internal reset is a grid
+  -- re-zero, not a play command). Loops keep sounding either way and get re-pinned.
+  clock.transport.start = function()
+    local internal = params:string("clock_source") == "internal"
+    if transport or transport_clk then
+      set_transport(false)
+      set_transport(true)
+    elseif not internal then
+      set_transport(true)
+      params:set("dronage_transport", 1, true)   -- reflect the external start (silent: no re-action)
+    end
+    if looper_on then looper.relaunch() end
+  end
+  clock.transport.stop = function()
+    if params:string("clock_source") ~= "internal" then
+      set_transport(false)
+      params:set("dronage_transport", 0, true)
+    end
+  end
   scr.init({
     eng = eng, mtx = mtx, seq = seq, mac = mac, scenes = scenes, euclid = euclid, scales = scales,
     undo = undo, rand = rand,
     grid_connected = function() return grd.connected() end,   -- GLOBAL shows Grid Brightness only then
     NOTE = NOTE,
     get_amp = function() return ui_amp end,
-    transport = function() return transport end,
+    transport = function() return transport or transport_clk ~= nil end,   -- armed counts (K2 while armed = cancel)
+    transport_armed = function() return transport_clk ~= nil end,          -- HOME indicator blinks while armed
     set_transport = set_transport,
+    looper = looper_on and looper or nil,   -- nil = no LL view registered (LITE default)
     project = project, project_new = project_new,
     mod_result = mod_result,   -- live post-mod values for the real-time value + +/- display
   })
@@ -514,4 +585,6 @@ function cleanup()
   if mod_clock then clock.cancel(mod_clock) end
   if seq_clock then clock.cancel(seq_clock) end
   if euclid_clock then clock.cancel(euclid_clock) end
+  if transport_clk then clock.cancel(transport_clk) end
+  pcall(looper.cleanup)   -- no-op unless the looper initialized (restores eng_cut/duck)
 end
