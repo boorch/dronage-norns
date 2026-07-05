@@ -80,7 +80,7 @@ local REVERB = {"dronage_reverb_shimmer","dronage_reverb_size","dronage_reverb_t
                 "dronage_reverb_damp","dronage_reverb_diff","dronage_reverb_fb","dronage_reverb_mod"}
 local TAPE = {"dronage_tape_age","dronage_tape_hiss","dronage_tape_compression","dronage_master_vol"}   -- chain order
 -- MACRO is now a custom view (kind "macro"); only the master amount remains a param.
-local GLOBAL = {"clock_tempo","dronage_root","dronage_scale","mod_depth","dronage_seed","dronage_sh_anchor"}
+local GLOBAL = {"clock_tempo","dronage_root","dronage_scale","mod_depth","dronage_seed","dronage_sh_anchor","dronage_grid_bright"}
 
 -- ---------- view registry (flat, linear order = K1 scroll order) ----------
 local VIEWS = {}      -- [lin] = {name, tag, kind, row, col, ids?, n?, src?}
@@ -101,6 +101,7 @@ local k3_used = false     -- K3 hold spent as the E3 snap modifier -> swallow it
 local k1_consumed = false   -- a K1 combo consumed the hold -> suppress minimap + skip nav on release
 local k2_eaten, k3_eaten = false, false   -- K2/K3 eaten by a matrix/scenes chord -> skip their release action
 local jump = 1           -- highlighted cell while K1 held
+local map_held = false   -- grid MAP pad hold: minimap overlay WITHOUT k1 semantics (shares `jump`)
 local toast_msg, toast_until = "", 0  -- transient on-screen popup
 local function toast(msg) toast_msg = msg; toast_until = util.time() + 1.0 end
 -- undo dirty-marking for edits that bypass params (matrix cells, CV-seq tracks, macro slots)
@@ -124,7 +125,11 @@ local function undo_step(d)
 end
 local cursor = {}        -- [lin] = panel cursor pos
 local top = {}           -- [lin] = panel scroll top
-local msrc = 1           -- matrix: selected source LFO column
+-- matrix: the LFO column IS the view (8 MM sibling views carry .src), so E1/minimap/grid
+-- pagination all move columns for free; ONE dest-row cursor shared across all 8 so a
+-- column jump keeps your place on the same voice/param row.
+local function mcol() local v = VIEWS[cur]; return (v and v.src) or 1 end
+local mrow = 1
 local scur = 1           -- scenes cursor
 local seqcol = 1         -- modseq: selected column (1-5 steps, 6 div, 7 len, 8-13 = 2x(osc,par,amt))
 local macro_sel = 0      -- macro: linear focus - 0 = AMOUNT, 1-9 = the 9 destination cells (3 slots x osc/param/depth)
@@ -143,6 +148,7 @@ local PLABEL = {
   dronage_reverb_fb = "Feedback", dronage_reverb_mod = "Modulation",
   dronage_tape_age = "Tape Age", dronage_tape_hiss = "Hiss",
   dronage_tape_compression = "Compression", dronage_master_vol = "Master Volume",
+  dronage_grid_bright = "Grid Brightness",
 }
 local function short(id)
   local s = id:gsub("^v%d+_",""):gsub("^lfo%d+_",""):gsub("^dronage_%a+_",""):gsub("^dronage_",""):gsub("^clock_","")
@@ -265,9 +271,24 @@ local function header(name, lin)
 end
 
 -- ---------- scrollable param panel ----------
+local lfo_ids   -- forward decl (defined with the LFO view code below)
+-- ids for a view, context-filtered: LFO lists follow sync/shape; GLOBAL hides the
+-- grid-brightness row when no grid is attached (C.grid_connected, injected by the host).
+local function view_ids(v)
+  if v.kind == "lfo" then return lfo_ids(v) end
+  if v.name == "GLOBAL" and C.grid_connected and not C.grid_connected() then
+    local out = {}
+    for _, id in ipairs(v.ids) do
+      if id ~= "dronage_grid_bright" then out[#out + 1] = id end
+    end
+    return out
+  end
+  return v.ids
+end
+
 local function draw_panel(lin)
   local v = VIEWS[lin]
-  local ids = v.ids
+  local ids = view_ids(v)
   local c = util.clamp(cursor[lin] or 1, 1, #ids); cursor[lin] = c
   local t = top[lin] or 1
   if c < t then t = c elseif c > t + PANEL_VIS - 1 then t = c - PANEL_VIS + 1 end
@@ -475,7 +496,7 @@ local function matrix_scopes()
   local H, ptr = C.mtx.HIST_LEN, C.mtx.hist_ptr
   for s = 1, C.mtx.NUM_SRC do
     local x0 = 56 + (s-1) * 9
-    local hist, act = C.mtx.hist[s], (s == msrc)
+    local hist, act = C.mtx.hist[s], (s == mcol())
     screen.aa(0)
     if act then screen.level(1); screen.rect(x0, SCY - SCA, 8, SCA * 2 + 1); screen.fill() end  -- focused: faint bg box
     screen.level(act and 0 or 1); screen.move(x0, SCY); screen.line(x0 + 7, SCY); screen.stroke()  -- 0 line (black on the focused box)
@@ -548,13 +569,15 @@ local function draw_euclid(lin)
 end
 
 local function draw_matrix(lin)
+  local mc = mcol()
   header("MOD MATRIX", lin)
-  screen.level(8); screen.move(83, TY); screen.text("LFO"..msrc)   -- over scopes 4-5
+  -- LFO title left of the position dots (dots start at x88; a little air between them)
+  screen.level(8); screen.move(78, TY); screen.text_right("LFO" .. mc)
   matrix_scopes()
   local n = #mvis
-  local c = util.clamp(cursor[lin] or 1, 1, n); cursor[lin] = c
+  local c = util.clamp(mrow, 1, n); mrow = c
   -- focused-cell depth as a percentage, in the empty band just below the title (left of the scopes)
-  screen.level(8); screen.move(2, 13); screen.text(string.format("%.1f%%", (C.mtx.cell[mvis[c].di][msrc] or 0) * 100))
+  screen.level(8); screen.move(2, 13); screen.text(string.format("%.1f%%", (C.mtx.cell[mvis[c].di][mc] or 0) * 100))
   local t = top[lin] or 1
   if c < t then t = c elseif c > t + 4 then t = c - 4 end
   t = util.clamp(t, 1, math.max(1, n - 4)); top[lin] = t
@@ -567,13 +590,13 @@ local function draw_matrix(lin)
     screen.level(i == c and 15 or 4); screen.move(4, y); screen.text(e.label)
     for s = 1, C.mtx.NUM_SRC do
       -- wire: column from the top down to the cell + row from the label across to the cell (not past it)
-      local hl = ((s == msrc and i <= c) or (i == c and s <= msrc)) and 4 or 2
+      local hl = ((s == mc and i <= c) or (i == c and s <= mc)) and 4 or 2
       radial(56 + (s-1) * 9 + 4, y - 2, 3.5, C.mtx.cell[e.di][s] or 0, hl)
     end
   end
   screen.aa(0)
   if c >= t and c <= t + 4 then
-    screen.level(15); screen.rect(56 + (msrc-1) * 9, DR0 + (c-t) * 9 - 6, 9, 9); screen.stroke()
+    screen.level(15); screen.rect(56 + (mc-1) * 9, DR0 + (c-t) * 9 - 6, 9, 9); screen.stroke()
   end
 end
 
@@ -890,7 +913,7 @@ end
 
 -- LFO param list, context-filtered like the PARAMETERS menu (matrix lfo_visibility): Rate when free
 -- / Div when synced; Length + Variation only for S&H shapes. Both still exist + save (display-only).
-local function lfo_ids(view)
+lfo_ids = function(view)
   local s = view.src
   local synced = C.mtx.src[s].sync          -- resolved sync bool (option value, reorder-safe)
   local shape = C.mtx.src[s].shape          -- resolved waveform id 1..7 (option value, reorder-safe)
@@ -968,7 +991,9 @@ function S.init(ctx)
   for i = 1, 4 do add(2, i-1, "VOICE "..i, "V"..i, "panel", {ids = vids(i)}) end
   for i = 1, 4 do add(3, i-1, "EUCLID "..i, "E"..i, "euclid", {ids = eids(i), v = i}) end
   for s = 1, 8 do add(4, s-1, "LFO "..s, "L"..s, "lfo", {ids = lids(s), src = s}) end
-  add(5, 0, "MOD MATRIX", "MM", "matrix")
+  -- 8 MM cells, one per LFO column: jumping into any of them from the minimap/grid lands on
+  -- the SAME dest row (shared mrow) with that cell's LFO column focused. E1 walks columns.
+  for s = 1, 8 do add(5, s - 1, "MOD MATRIX", "MM", "matrix", { src = s }) end
   add(6, 0, "DELAY", "DL", "panel", {ids = DELAY}); add(6, 1, "REVERB", "RV", "panel", {ids = REVERB})
   add(6, 2, "MASTER FX", "M", "panel", {ids = TAPE})
   add(7, 0, "MACRO CONTROLLER", "MC", "macro"); add(7, 1, "CV SEQUENCER", "CS", "modseq"); add(7, 2, "SCENES", "S", "scenes")
@@ -987,7 +1012,7 @@ end
 
 function S.redraw()
   screen.clear(); screen.aa(0); screen.font_face(1); screen.font_size(8)
-  if k1held and not k1_consumed then draw_minimap()   -- a combo consumes the hold -> show the view instead
+  if (k1held and not k1_consumed) or map_held then draw_minimap()   -- a combo consumes the hold -> show the view instead
   else
     local v = VIEWS[cur]
     local k = v.kind
@@ -1005,6 +1030,61 @@ function S.redraw()
   screen.update()
 end
 
+-- E3-equivalent value edit on view v's focused thing - the ONE per-param feel dispatch,
+-- shared by the encoder (S.enc n==3) and the grid's +/- pads so both stay identical.
+local function tweak_view(v, d)
+  local k = v.kind
+  if k == "matrix" then
+    local di = mvis[util.clamp(mrow, 1, #mvis)].di
+    local mc = mcol()
+    C.mtx.set_cell(di, mc, (C.mtx.cell[di][mc] or 0) + ddelta(d)); touched()   -- 0.1% steps + accel
+  elseif k == "modseq" then
+    seq_edit(cursor[cur] or 1, seqcol, d); touched()
+  elseif k == "macro" then
+    if macro_sel == 0 then pdelta("dronage_macro_amount", d)   -- amount = live knob, not undo-tracked
+    else macro_edit(macro_sel, d); touched() end
+  elseif k == "panel" or k == "lfo" or k == "euclid" then
+    local ids = view_ids(v)   -- LFO sync/shape filtering + GLOBAL grid-row filtering
+    local id = ids[util.clamp(cursor[cur] or 1, 1, #ids)]
+    if k3held then k3_used = true end   -- editing during a K3 hold: release must not gate-toggle
+    if id:match("_pitch$") and k3held then
+      -- K3 + E3 on Pitch: jump whole octaves (CW = up). Deliberately blunter than the normal
+      -- pitch feel: enc accel is ignored and it takes 2 detents per jump, so a gentle touch
+      -- can't skip several octaves.
+      k3_used = true
+      if d * oct_acc < 0 then oct_acc = 0 end
+      oct_acc = oct_acc + (d > 0 and 1 or -1)
+      if math.abs(oct_acc) >= 2 then
+        params:set(id, params:get(id) + (oct_acc > 0 and 12 or -12)); oct_acc = 0
+      end
+    elseif id:match("_pitch$") and C.scales.idx and C.scales.idx > 1 then
+      params:set(id, C.scales.next(params:get(id), d > 0 and 1 or -1))   -- scale on: step note by note
+    elseif id:match("_pitch$") then
+      fdelta(id, d, PITCH_ACCK)   -- pitch: fine slow detent, hotter fast flick
+    elseif id:match("_tune$") and k3held then
+      -- K3 + E3 on Tune: snap to whole semitones - next integer in the turn direction, then 1/detent
+      k3_used = true
+      local val = params:get(id)
+      params:set(id, util.clamp(d > 0 and (math.floor(val + 1e-6) + 1) or (math.ceil(val - 1e-6) - 1), -12, 12))
+    elseif id:match("_tune$") then
+      fdelta(id, d, TUNE_ACCK)   -- tune: 0.01 st detents with a gentle fast-flick curve
+    elseif id:match("_cut$") or id:match("_hpcut$") then
+      fdelta(id, d, CUT_ACCK, CUT_FASTDT)   -- filter freqs: same curve, hotter K + wider window
+    elseif id:match("_phase$") and k3held then
+      -- K3 + E3 on Phase: snap to multiples of 3.125% (= one S&H step at the max Length of 32)
+      local q, val = 0.03125, params:get(id)
+      params:set(id, util.clamp(d > 0 and (math.floor(val / q + 1e-6) + 1) * q or (math.ceil(val / q - 1e-6) - 1) * q, 0, 1))
+    elseif id:match("_phase$") then
+      fdelta(id, d, PHASE_ACCK)   -- 0.125% detents with a gentle fast-flick curve
+    elseif id:match("_esteps$") or id:match("_erate$") then
+      pdelta(id, d > 0 and 1 or -1)   -- euclid option params: one entry per detent (no enc-accel jumps)
+    else
+      pdelta(id, d)
+    end
+  end
+  -- home / scenes / project: no focused value to tweak
+end
+
 -- move to prev/next view inside the current row (E1, no K1)
 local function step_in_row(d)
   local rv = ROWVIEWS[VIEWS[cur].row]
@@ -1013,6 +1093,74 @@ local function step_in_row(d)
   i = util.clamp(i + d, 1, #rv)
   cur = rv[i]
   if C.rand then C.rand.nav() end   -- leaving a page re-arms its randomize-press alternation
+end
+
+-- ---------- shared action bodies (physical keys AND the grid route through these) ----------
+-- roll the current page's curated dice (the K1+K2+K3 chord body; grid RND too)
+local function do_randomize()
+  if not C.rand then return end
+  local vw = VIEWS[cur]
+  local focus   -- matrix: the focused row's voice; CV seq: the cursor's track
+  if vw.kind == "matrix" then
+    focus = C.mtx.dests[mvis[util.clamp(mrow, 1, #mvis)].di].voice
+  elseif vw.kind == "modseq" then
+    focus = util.clamp(cursor[cur] or 1, 1, C.seq.NUM_TRACKS)
+  end
+  local msg = C.rand.page(vw, focus)
+  if msg then toast(msg) end
+end
+
+-- recall the highlighted scene (scenes K2 release; grid YES on SCENES)
+local function scene_recall()
+  if scur ~= C.scenes.current then   -- same slot = no-op in switch(); don't checkpoint it
+    C.undo.around("SCENE", function() C.scenes.switch(scur) end)
+  end
+  toast("RECALLED " .. scur)
+end
+
+-- store into the highlighted scene slot (scenes K3 release; grid SHIFT-tap on SCENES).
+-- Storing over ANOTHER slot's snapshot asks first; the current slot is the routine save.
+local function scene_store()
+  local function store()
+    C.undo.around("SCENE STORE", function() C.scenes.store(scur) end); toast("STORED " .. scur)
+  end
+  if C.scenes.slots[scur] ~= nil and scur ~= C.scenes.current then
+    confirm = { kind = "scenes", prompt = { "OVERWRITE SCENE " .. scur .. "?" }, action = store }
+  else store() end
+end
+
+-- scene clipboard verbs (norns: K1+K2 copy current / K1+K3 paste to focused, SCENES view
+-- only; grid: SHIFT+scene-pad hold = copy that slot / tap = paste to it). Copy of the
+-- active scene captures the LIVE state (unsaved tweaks travel); paste is undoable.
+local function scene_copy(i)
+  if C.scenes.copy(i) then toast("COPIED SCENE " .. i)
+  else toast("SCENE " .. i .. " EMPTY") end
+end
+local function scene_paste(i)
+  if not C.scenes.clip then toast("NOTHING COPIED"); return end
+  scur = i
+  C.undo.around("SCENE PASTE", function() C.scenes.paste(i) end)
+  toast("PASTED TO " .. i)
+end
+
+-- open the INITIALIZE SCENE confirm (scenes K2+K3; grid RST on SCENES)
+local function confirm_scene_init()
+  local slot = scur
+  confirm = { kind = "scenes", prompt = { "INITIALIZE SCENE " .. slot .. "?" },
+              action = function()
+                C.undo.around("SCENE INIT", function() C.scenes.clear(slot) end)
+                toast("CLEARED " .. slot)
+              end }
+end
+
+-- open the delete-project confirm (project K2+K3; grid RST on PROJECT). No-op on "+ new".
+local function confirm_project_delete()
+  local pidx = util.clamp(cursor[cur] or 1, 1, #project_items())
+  if pidx > 1 then
+    local name = project_items()[pidx]
+    confirm = { kind = "project", prompt = { "delete project", '"' .. name .. '"?' },
+                action = function() C.project.delete(name); toast("DELETED " .. name) end }
+  end
 end
 
 -- minimap E2: move the highlighted cell one row up/down, to the column closest to the current one
@@ -1041,7 +1189,8 @@ end
 function S.enc(n, d)
   local v = VIEWS[cur]
   if k1held then   -- minimap nav: E1 = linear (all) · E2 = row change · E3 = within-row (clamped)
-    if k3held and n == 1 then pdelta("dronage_master_vol", d)   -- +K3: E1 = master volume (overlay)
+    -- (K1+K3 on SCENES is the paste chord, so no master-vol overlay there)
+    if k3held and n == 1 and VIEWS[cur].kind ~= "scenes" then pdelta("dronage_master_vol", d)   -- +K3: E1 = master volume (overlay)
     elseif n == 2 then minimap_row_move(d)
     elseif n == 3 then minimap_col_move(d)
     else jump = util.clamp(jump + (d > 0 and 1 or -1), 1, #VIEWS) end
@@ -1054,74 +1203,30 @@ function S.enc(n, d)
   end
   if n == 1 then
     if v.kind == "home" then home_viz = (home_viz - 1 + (d > 0 and 1 or -1)) % #VIZ_NAMES + 1   -- E1 cycles the HOME viz
-    elseif v.kind == "matrix" then msrc = util.clamp(msrc + (d > 0 and 1 or -1), 1, C.mtx.NUM_SRC)   -- alone in its row: E1 = LFO column
-    else step_in_row(d) end
+    else step_in_row(d) end   -- matrix included: its siblings ARE the 8 LFO columns
     return
   end
+  if n == 3 then tweak_view(v, d); return end   -- the shared per-param feel dispatch (grid +/- too)
+  -- from here n == 2: cursor / selection movement per view kind
   local k = v.kind
   if k == "home" then
-    if n == 2 then cursor[cur] = util.clamp((cursor[cur] or 1) + (d > 0 and 1 or -1), 1, C.eng.NUM_VOICES) end   -- pick a gate toggle
+    cursor[cur] = util.clamp((cursor[cur] or 1) + (d > 0 and 1 or -1), 1, C.eng.NUM_VOICES)   -- pick a gate toggle
   elseif k == "matrix" then
-    if n == 2 then cursor[cur] = util.clamp((cursor[cur] or 1) + d, 1, #mvis)
-    elseif n == 3 then local di = mvis[util.clamp(cursor[cur] or 1, 1, #mvis)].di
-      C.mtx.set_cell(di, msrc, (C.mtx.cell[di][msrc] or 0) + ddelta(d)); touched() end   -- 0.1% steps + accel
+    mrow = util.clamp(mrow + d, 1, #mvis)
   elseif k == "modseq" then
-    if n == 2 then   -- E2 = one linear walk over every cell, track by track (like MACRO's E2)
-      local lin = util.clamp(((cursor[cur] or 1) - 1) * SEQ_NCOL + seqcol + d, 1, C.seq.NUM_TRACKS * SEQ_NCOL)
-      cursor[cur] = math.floor((lin - 1) / SEQ_NCOL) + 1
-      seqcol = (lin - 1) % SEQ_NCOL + 1
-    elseif n == 3 then seq_edit(cursor[cur] or 1, seqcol, d); touched() end   -- E3 = tweak focused cell
+    -- E2 = one linear walk over every cell, track by track (like MACRO's E2)
+    local lin = util.clamp(((cursor[cur] or 1) - 1) * SEQ_NCOL + seqcol + d, 1, C.seq.NUM_TRACKS * SEQ_NCOL)
+    cursor[cur] = math.floor((lin - 1) / SEQ_NCOL) + 1
+    seqcol = (lin - 1) % SEQ_NCOL + 1
   elseif k == "macro" then
-    if n == 2 then macro_sel = util.clamp(macro_sel + (d > 0 and 1 or -1), 0, C.mac.NUM_SLOTS * 3)  -- E2 = linear: AMOUNT + 9 cells
-    elseif n == 3 then
-      if macro_sel == 0 then pdelta("dronage_macro_amount", d)   -- amount = live knob, not undo-tracked
-      else macro_edit(macro_sel, d); touched() end   -- E3 = tweak
-    end
+    macro_sel = util.clamp(macro_sel + (d > 0 and 1 or -1), 0, C.mac.NUM_SLOTS * 3)  -- linear: AMOUNT + 9 cells
   elseif k == "scenes" then
-    if n == 2 then scur = util.clamp(scur + d, 1, C.scenes.NUM) end
+    scur = util.clamp(scur + d, 1, C.scenes.NUM)
   elseif k == "project" then
-    if n == 2 then cursor[cur] = util.clamp((cursor[cur] or 1) + d, 1, #project_items()) end
+    cursor[cur] = util.clamp((cursor[cur] or 1) + d, 1, #project_items())
   else  -- panel / lfo / euclid
-    local ids = (v.kind == "lfo") and lfo_ids(v) or v.ids   -- LFO list is Rate/Div-filtered by sync
-    if n == 2 then cursor[cur] = util.clamp((cursor[cur] or 1) + d, 1, #ids)
-    elseif n == 3 then
-      local id = ids[util.clamp(cursor[cur] or 1, 1, #ids)]
-      if k3held then k3_used = true end   -- editing during a K3 hold: release must not gate-toggle
-      if id:match("_pitch$") and k3held then
-        -- K3 + E3 on Pitch: jump whole octaves (CW = up). Deliberately blunter than the normal
-        -- pitch feel: enc accel is ignored and it takes 2 detents per jump, so a gentle touch
-        -- can't skip several octaves.
-        k3_used = true
-        if d * oct_acc < 0 then oct_acc = 0 end
-        oct_acc = oct_acc + (d > 0 and 1 or -1)
-        if math.abs(oct_acc) >= 2 then
-          params:set(id, params:get(id) + (oct_acc > 0 and 12 or -12)); oct_acc = 0
-        end
-      elseif id:match("_pitch$") and C.scales.idx and C.scales.idx > 1 then
-        params:set(id, C.scales.next(params:get(id), d > 0 and 1 or -1))   -- scale on: step note by note
-      elseif id:match("_pitch$") then
-        fdelta(id, d, PITCH_ACCK)   -- pitch: fine slow detent, hotter fast flick
-      elseif id:match("_tune$") and k3held then
-        -- K3 + E3 on Tune: snap to whole semitones - next integer in the turn direction, then 1/detent
-        k3_used = true
-        local val = params:get(id)
-        params:set(id, util.clamp(d > 0 and (math.floor(val + 1e-6) + 1) or (math.ceil(val - 1e-6) - 1), -12, 12))
-      elseif id:match("_tune$") then
-        fdelta(id, d, TUNE_ACCK)   -- tune: 0.01 st detents with a gentle fast-flick curve
-      elseif id:match("_cut$") or id:match("_hpcut$") then
-        fdelta(id, d, CUT_ACCK, CUT_FASTDT)   -- filter freqs: same curve, hotter K + wider window
-      elseif id:match("_phase$") and k3held then
-        -- K3 + E3 on Phase: snap to multiples of 3.125% (= one S&H step at the max Length of 32)
-        local q, val = 0.03125, params:get(id)
-        params:set(id, util.clamp(d > 0 and (math.floor(val / q + 1e-6) + 1) * q or (math.ceil(val / q - 1e-6) - 1) * q, 0, 1))
-      elseif id:match("_phase$") then
-        fdelta(id, d, PHASE_ACCK)   -- 0.125% detents with a gentle fast-flick curve
-      elseif id:match("_esteps$") or id:match("_erate$") then
-        pdelta(id, d > 0 and 1 or -1)   -- euclid option params: one entry per detent (no enc-accel jumps)
-      else
-        pdelta(id, d)
-      end
-    end
+    local ids = view_ids(v)   -- LFO sync/shape filtering + GLOBAL grid-row filtering
+    cursor[cur] = util.clamp((cursor[cur] or 1) + d, 1, #ids)
   end
 end
 
@@ -1143,17 +1248,17 @@ function S.key(n, z)
   -- Consume the hold: no minimap, and release skips navigation. Undoable (K2+E1).
   if k1held and k2held and k3held then
     k1_consumed = true
-    if C.rand then
-      local vw = VIEWS[cur]
-      local focus   -- matrix: the focused row's voice; CV seq: the cursor's track
-      if vw.kind == "matrix" then
-        focus = C.mtx.dests[mvis[util.clamp(cursor[cur] or 1, 1, #mvis)].di].voice
-      elseif vw.kind == "modseq" then
-        focus = util.clamp(cursor[cur] or 1, 1, C.seq.NUM_TRACKS)
-      end
-      local msg = C.rand.page(vw, focus)
-      if msg then toast(msg) end
-    end
+    do_randomize()
+    return
+  end
+  -- SCENES view: K1+K2 = copy the CURRENT scene (live state), K1+K3 = paste into the
+  -- FOCUSED slot. Both consume the hold (no minimap transport / master-vol on this view).
+  if k1held and k2held and not k1_consumed and VIEWS[cur].kind == "scenes" and not confirm then
+    scene_copy(C.scenes.current); k1_consumed = true
+    return
+  end
+  if k1held and k3held and not k1_consumed and VIEWS[cur].kind == "scenes" and not confirm then
+    scene_paste(scur); k1_consumed = true
     return
   end
   -- PROJECT view: K1+K2 = save under a fresh random name (no keyboard); wins over minimap transport
@@ -1187,7 +1292,7 @@ function S.key(n, z)
   if v.kind == "panel" or v.kind == "lfo" or v.kind == "euclid" then
     local vnum = (v.kind == "panel" and v.ids and v.ids[1] and v.ids[1]:match("^v(%d+)_")) or (v.kind == "euclid" and v.v)
     if z == 1 and k2held and k3held then
-      local ids = (v.kind == "lfo") and lfo_ids(v) or v.ids
+      local ids = view_ids(v)
       reset_param(ids[util.clamp(cursor[cur] or 1, 1, #ids)])
       k2_eaten, k3_eaten = true, true   -- swallow both releases (gate/transport must not also fire)
     elseif n == 3 and z == 0 then
@@ -1206,7 +1311,7 @@ function S.key(n, z)
   if (v.kind == "matrix" or v.kind == "modseq" or v.kind == "macro") and (n == 2 or n == 3) then
     if z == 1 then
       if k2held and k3held then
-        if v.kind == "matrix" then C.mtx.set_cell(mvis[util.clamp(cursor[cur] or 1, 1, #mvis)].di, msrc, 0)
+        if v.kind == "matrix" then C.mtx.set_cell(mvis[util.clamp(mrow, 1, #mvis)].di, mcol(), 0)
         elseif v.kind == "modseq" then seq_reset_cell(cursor[cur] or 1, seqcol)
         else macro_reset() end
         touched()
@@ -1225,43 +1330,18 @@ function S.key(n, z)
   if (v.kind == "scenes" or v.kind == "project") and (n == 2 or n == 3) then
     if z == 1 then
       if k2held and k3held then
-        if v.kind == "project" then
-          local pidx = util.clamp(cursor[cur] or 1, 1, #project_items())
-          if pidx > 1 then local name = project_items()[pidx]
-            confirm = { kind = "project", prompt = { "delete project", '"' .. name .. '"?' },
-                        action = function() C.project.delete(name); toast("DELETED " .. name) end } end   -- ask first
-        else
-          local slot = scur   -- ask before initializing a scene
-          confirm = { kind = "scenes", prompt = { "INITIALIZE SCENE " .. slot .. "?" },
-                      action = function()
-                        C.undo.around("SCENE INIT", function() C.scenes.clear(slot) end)
-                        toast("CLEARED " .. slot)
-                      end }
-        end
+        if v.kind == "project" then confirm_project_delete()   -- ask first
+        else confirm_scene_init() end                          -- ask first
         k2_eaten, k3_eaten = true, true
       end
     elseif n == 2 then
       if k2_eaten then k2_eaten = false
       elseif v.kind == "project" then project_save()
-      else
-        if scur ~= C.scenes.current then   -- same slot = no-op in switch(); don't checkpoint it
-          C.undo.around("SCENE", function() C.scenes.switch(scur) end)
-        end
-        toast("RECALLED " .. scur)
-      end
+      else scene_recall() end
     else
       if k3_eaten then k3_eaten = false
       elseif v.kind == "project" then project_activate(util.clamp(cursor[cur] or 1, 1, #project_items()))
-      else
-        -- storing over ANOTHER slot's saved snapshot is destructive -> confirm. The current slot is
-        -- the routine "save my tweaks" (and autosaves on switch anyway), so it stays prompt-free.
-        local function store()
-          C.undo.around("SCENE STORE", function() C.scenes.store(scur) end); toast("STORED " .. scur)
-        end
-        if C.scenes.slots[scur] ~= nil and scur ~= C.scenes.current then
-          confirm = { kind = "scenes", prompt = { "OVERWRITE SCENE " .. scur .. "?" }, action = store }
-        else store() end
-      end
+      else scene_store() end
     end
     return
   end
@@ -1278,6 +1358,210 @@ function S.key(n, z)
       params:set("v" .. i .. "_gate", (params:get("v" .. i .. "_gate") == 1) and 0 or 1)
     end
   end
+end
+
+-- ---------- grid semantic API (lib/dronage_norns_grid) ----------
+-- The grid is a MIRROR of this UI: every function below routes into the exact code paths the
+-- encoders/keys use (per-param feel, undo touch, confirms, toasts). Rules: never touch
+-- k1held/k2held/k3held or the eaten flags (those belong to physical keys), no-op while the
+-- physical minimap is up (k1held) so grid input can't fight it, and while a confirm dialog is
+-- open only grid_yes/grid_no act.
+
+-- 2D cursor move: dy = down(+)/up(-) like E2, dx = right(+)/left(-) horizontal where a view
+-- has one. Per-kind edge handling (target cell missing = no-op, never a wrapped surprise).
+-- coarse (grid SHIFT+arrow): on the MATRIX, dy jumps a whole voice (same param), wrapping.
+function S.grid_nav(dx, dy, coarse)
+  if k1held or map_held then   -- steer the minimap highlight instead
+    if dy ~= 0 then minimap_row_move(dy) end
+    if dx ~= 0 then minimap_col_move(dx) end
+    return
+  end
+  if confirm then return end
+  local v = VIEWS[cur]
+  local k = v.kind
+  if k == "home" then
+    if dx ~= 0 then cursor[cur] = util.clamp((cursor[cur] or 1) + dx, 1, C.eng.NUM_VOICES) end
+  elseif k == "matrix" then
+    if dy ~= 0 then
+      if coarse then mrow = (util.clamp(mrow, 1, #mvis) - 1 + dy * #MATRIX_DESTS) % #mvis + 1
+      else mrow = util.clamp(mrow + dy, 1, #mvis) end
+    end
+    if dx ~= 0 then step_in_row(dx) end   -- columns ARE the sibling views
+  elseif k == "modseq" then   -- true 2D over the same cells as the linear E2 walk
+    if dy ~= 0 then cursor[cur] = util.clamp((cursor[cur] or 1) + dy, 1, C.seq.NUM_TRACKS) end
+    if dx ~= 0 then seqcol = util.clamp(seqcol + dx, 1, SEQ_NCOL) end
+  elseif k == "macro" then    -- up = AMOUNT, down = the slot cells, left/right walks them
+    if dy < 0 then macro_sel = 0
+    elseif dy > 0 and macro_sel == 0 then macro_sel = 1 end
+    if dx ~= 0 and macro_sel > 0 then macro_sel = util.clamp(macro_sel + dx, 1, C.mac.NUM_SLOTS * 3) end
+  elseif k == "scenes" then   -- 2x4 slot grid
+    local r, c2 = math.floor((scur - 1) / 4), (scur - 1) % 4
+    if dy ~= 0 then r = util.clamp(r + (dy > 0 and 1 or -1), 0, 1) end
+    if dx ~= 0 then c2 = util.clamp(c2 + (dx > 0 and 1 or -1), 0, 3) end
+    scur = r * 4 + c2 + 1
+  elseif k == "project" then
+    if dy ~= 0 then cursor[cur] = util.clamp((cursor[cur] or 1) + dy, 1, #project_items()) end
+  else  -- panel / lfo / euclid lists
+    if dy ~= 0 then
+      local ids = view_ids(v)
+      cursor[cur] = util.clamp((cursor[cur] or 1) + dy, 1, #ids)
+    end
+  end
+end
+
+-- prev/next sibling view in the row, WRAPPING (E1 clamps; the grid wraps by design).
+-- HOME mirrors E1's viz cycle; on the MATRIX the siblings are the LFO columns, so << >>
+-- walk columns (wrapping) - the voice jump lives on SHIFT+up/down (grid_nav coarse).
+function S.grid_page(dir)
+  if k1held or map_held or confirm then return end
+  local v = VIEWS[cur]
+  if v.kind == "home" then
+    home_viz = (home_viz - 1 + dir) % #VIZ_NAMES + 1
+    return
+  end
+  local rv = ROWVIEWS[v.row]
+  if #rv < 2 then return end
+  local i = 1
+  for k2, l in ipairs(rv) do if l == cur then i = k2 break end end
+  cur = rv[(i - 1 + dir) % #rv + 1]
+  if C.rand then C.rand.nav() end
+end
+
+function S.grid_tweak(d)
+  if k1held or map_held or confirm then return end
+  tweak_view(VIEWS[cur], d)
+end
+
+-- the K2+K3 reset semantics for the current view (incl. the dialog-guarded destructive ones)
+function S.grid_reset()
+  if k1held or map_held or confirm then return end
+  local v = VIEWS[cur]
+  local k = v.kind
+  if k == "panel" or k == "lfo" or k == "euclid" then
+    local ids = view_ids(v)
+    reset_param(ids[util.clamp(cursor[cur] or 1, 1, #ids)])
+  elseif k == "matrix" then
+    C.mtx.set_cell(mvis[util.clamp(mrow, 1, #mvis)].di, mcol(), 0); touched()
+  elseif k == "modseq" then seq_reset_cell(cursor[cur] or 1, seqcol); touched()
+  elseif k == "macro" then macro_reset(); touched()
+  elseif k == "scenes" then confirm_scene_init()
+  elseif k == "project" then confirm_project_delete() end
+  -- home: no-op (the pad renders dark there)
+end
+
+function S.grid_random()
+  if k1held or map_held or confirm then return end
+  do_randomize()
+end
+
+-- YES: answer an open dialog; else the view's primary verb on SCENES (recall) / PROJECT
+-- (load/new); else transport PLAY. NO: answer dialog; else transport STOP. Deliberately NOT
+-- K2/K3 emulation, and never touches the eaten flags (those swallow PHYSICAL releases only).
+function S.grid_yes()
+  local v = VIEWS[cur]
+  if confirm and confirm.kind == v.kind then
+    local a = confirm.action; confirm = nil; a()
+    return
+  end
+  if v.kind == "scenes" then scene_recall()
+  elseif v.kind == "project" then project_activate(util.clamp(cursor[cur] or 1, 1, #project_items()))
+  else C.set_transport(true) end
+end
+
+function S.grid_no()
+  local v = VIEWS[cur]
+  if confirm and confirm.kind == v.kind then confirm = nil; return end
+  C.set_transport(false)
+end
+
+-- single deliberate steps (no E1 latch; undo_dir belongs to the physical K2 hold)
+function S.grid_undo()
+  local l = C.undo.undo()
+  toast(l and ("UNDO " .. l) or "NOTHING TO UNDO")
+end
+function S.grid_redo()
+  local l = C.undo.redo()
+  toast(l and ("REDO " .. l) or "NOTHING TO REDO")
+end
+
+-- the view's K3-style execute (grid SHIFT-tap): gate toggle on HOME/VOICE/EUCLID, store on
+-- SCENES (overwrite confirm included), load on PROJECT; nothing elsewhere.
+function S.grid_execute()
+  if k1held or map_held or confirm then return end
+  local v = VIEWS[cur]
+  local k = v.kind
+  local vnum = (k == "panel" and v.ids and v.ids[1] and v.ids[1]:match("^v(%d+)_"))
+            or (k == "euclid" and v.v)
+  if k == "home" then
+    local i = util.clamp(cursor[cur] or 1, 1, C.eng.NUM_VOICES)
+    params:set("v" .. i .. "_gate", (params:get("v" .. i .. "_gate") == 1) and 0 or 1)
+  elseif vnum then
+    params:set("v" .. vnum .. "_gate", (params:get("v" .. vnum .. "_gate") == 1) and 0 or 1)
+  elseif k == "scenes" then scene_store()
+  elseif k == "project" then project_activate(util.clamp(cursor[cur] or 1, 1, #project_items()))
+  end
+end
+
+-- direct scene-launch pads: recall slot i from ANY view (same undo-wrapped path as the
+-- scenes-view recall; an empty slot clones the current state into it, existing semantics)
+function S.grid_scene(i)
+  if confirm then return end
+  scur = i   -- the SCENES screen highlight follows the launch
+  if i ~= C.scenes.current then
+    C.undo.around("SCENE", function() C.scenes.switch(i) end)
+  end
+  toast("RECALLED " .. i)
+end
+
+-- MAP pad: hold = minimap overlay (arrows steer `jump` via grid_nav), release = go there.
+-- Shares `jump` with a concurrent physical K1 hold (both steer the same highlight) - accepted.
+function S.grid_map(z)
+  if z == 1 then
+    if confirm then return end   -- no minimap over a dialog
+    map_held = true; jump = cur
+  elseif map_held then
+    map_held = false
+    if cur ~= jump then
+      cur = jump
+      if C.rand then C.rand.nav() end
+    end
+  end
+end
+
+-- the grid's left side mirrors the minimap 1:1, so jumps address views by (row, col) -
+-- exactly the registry geometry. Returns false when no view lives there (pad = no-op).
+function S.grid_jump_rc(row, col)
+  for lin, vw in ipairs(VIEWS) do
+    if vw.row == row and vw.col == col then
+      if cur ~= lin then
+        cur = lin
+        if C.rand then C.rand.nav() end
+      end
+      return true
+    end
+  end
+  return false
+end
+
+-- grid scene-clipboard verbs (SHIFT+scene-pad: hold = copy that slot, tap = paste to it)
+function S.grid_scene_copy(i) if not confirm then scene_copy(i) end end
+function S.grid_scene_paste(i) if not confirm then scene_paste(i) end end
+
+-- snapshot for the grid's LED logic (which pads are live, what blinks)
+function S.grid_state()
+  local v = VIEWS[cur]
+  local k = v.kind
+  return {
+    kind = k, name = v.name, lin = cur,
+    confirm_up = (confirm ~= nil and confirm.kind == k),
+    map_held = map_held,
+    playing = C.transport(),
+    rnd_ok = (k ~= "home" and k ~= "project"),
+    tweak_ok = (k ~= "home" and k ~= "scenes" and k ~= "project"),   -- views with a focused value
+    rst_ok = (k ~= "home") and not (k == "project" and (cursor[cur] or 1) <= 1),   -- no project_items(): that scandirs, and this runs at 30 fps
+    nav_x = (k == "matrix" or k == "modseq" or k == "macro" or k == "scenes" or k == "home"),
+    nav_y = (k ~= "home"),
+  }
 end
 
 S.VIEWS = VIEWS

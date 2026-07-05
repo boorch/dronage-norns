@@ -90,6 +90,23 @@ function M.switch(i)
   if M.slots[i] then M.recall(i) else M.slots[i] = M.capture() end
 end
 
+-- scene clipboard (session-only). Copying the ACTIVE scene captures the LIVE state, so
+-- unsaved tweaks travel (the compose-copy-compose flow); any other slot copies its stored
+-- snapshot. Sharing snapshot tables by reference is safe: they are replaced, never mutated.
+M.clip = nil
+function M.copy(i)
+  local snap = (i == M.current) and M.capture() or M.slots[i]
+  if not snap then return false end
+  M.clip = snap
+  return true
+end
+function M.paste(i)
+  if not M.clip then return false end
+  M.slots[i] = M.clip
+  if i == M.current then M.recall(i) end   -- pasting onto the active scene applies it live
+  return true
+end
+
 function M.store(i) M.slots[i] = M.capture(); M.current = i end   -- store live into slot i, make it active
 function M.store_current() M.store(M.current) end
 function M.clear(i) M.slots[i] = nil end                          -- forget slot i's snapshot (live sound unchanged)

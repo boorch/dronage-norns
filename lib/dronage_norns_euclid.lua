@@ -92,6 +92,7 @@ function M.advance(beats)
           -- so the S&H step landing on this exact beat must already be in the engine.
           if M.pre_trig and not flushed then M.pre_trig(); flushed = true end
           engine.trig(v)
+          if M.on_trig then M.on_trig(v) end   -- optional observer (grid pad pings), post-probability
         end
       end
     end

@@ -4,7 +4,7 @@ Ambient drone workstation for **monome norns**.
 
 Dronage Norns is part of the **Dronage** series. The idea began with [Dronage Terminal](https://boorch.itch.io/dronage-terminal), the original terminal drone synth and the first iteration of the series; Dronage Norns brings that sound to the norns sound computer.
 
-Four voices built on a famous open-source macro synth module, each with its own filter, drive, fades and Euclidean trigger sequencer, fed through a shared delay / reverb / tape section. LFO Matrix with eight LFOs, a five-track CV sequencer and three macros modulate anything. Eight scenes per project, named projects on disk, and a HOME screen full of live visualizers.
+Four voices built on a famous open-source macro synth module, each with its own filter, drive, fades and Euclidean trigger sequencer, fed through a shared delay / reverb / tape section. LFO Matrix with eight LFOs, a five-track CV sequencer and three macros modulate anything. Eight scenes per project, named projects on disk, a HOME screen full of live visualizers, and full **monome grid 128** support.
 
 ---
 
@@ -28,11 +28,12 @@ Four voices built on a famous open-source macro synth module, each with its own 
    - [SCENES](#scenes)
    - [GLOBAL](#global)
    - [PROJECT](#project)
-8. [Recipe: generative ambient](#8-recipe-generative-ambient)
-9. [Cheat sheet](#9-cheat-sheet)
-10. [FAQ](#10-faq)
-11. [The full scale list](#11-the-full-scale-list)
-12. [Credits](#12-credits)
+8. [The grid](#8-the-grid)
+9. [Recipe: generative ambient](#9-recipe-generative-ambient)
+10. [Cheat sheet](#10-cheat-sheet)
+11. [FAQ](#11-faq)
+12. [The full scale list](#12-the-full-scale-list)
+13. [Credits](#13-credits)
 
 ---
 
@@ -48,7 +49,7 @@ Four voices built on a famous open-source macro synth module, each with its own 
 
 **First run installs the audio engine,** then restarts norns to load it. You'll see an install screen; follow the prompt (**K3 = finish and restart**). After the restart, run the script again and you're in. The same screen reappears after any update that changes the audio engine - same drill, K3 and restart.
 
-From then on dronage **checks for updates at launch** and offers to install them (see the [FAQ](#10-faq)); updating through maiden keeps working too.
+From then on dronage **checks for updates at launch** and offers to install them (see the [FAQ](#11-faq)); updating through maiden keeps working too.
 
 ---
 
@@ -100,8 +101,8 @@ Global gestures, available from **any** screen:
 - **K2 (hold) + E1**: **undo / redo** ([details](#undo-and-redo-k2--e1)).
 - **K1+K2+K3**: **randomize the current screen** with curated, undoable dice ([details](#randomize-k1--k2--k3)).
 - **K1 + E1/E2/E3**: the minimap (next section).
-- **K1 + K2**: transport **play/stop** (on PROJECT this is the quick-save instead).
-- **K1 + K3 (hold) + E1**: **master volume** (next section).
+- **K1 + K2**: transport **play/stop** (on PROJECT: quick-save; on SCENES: **copy scene**).
+- **K1 + K3 (hold) + E1**: **master volume** (on SCENES, K1+K3 is **paste scene** instead).
 
 ---
 
@@ -120,7 +121,7 @@ Two extras while the minimap is up:
 - **K2** toggles the transport (play/stop), same as K2 on HOME - so you can start/stop from anywhere. (On PROJECT the K1+K2 quick-save wins.)
 - **Hold K3** and the "minimap" label in the top-right becomes **MASTER VOL: 100%** - turn **E1** to set it; release K3 and the label reverts. Master volume is the very last gain after the whole master chain; it is never saved with scenes or projects.
 
-You can also flip between **siblings in the same row without the minimap**: just turn **E1**. On VOICE 2 it walks V1↔V2↔V3↔V4; on LFO 3 it walks the eight LFOs; on DELAY it walks DELAY↔REVERB↔MASTER FX; on MACRO it walks MACRO↔CV SEQ↔SCENES. (Two exceptions: on HOME, E1 cycles the visualizers, and on MOD MATRIX - alone in its row - E1 moves the LFO source column.)
+You can also flip between **siblings in the same row without the minimap**: just turn **E1**. On VOICE 2 it walks V1↔V2↔V3↔V4; on LFO 3 it walks the eight LFOs; on DELAY it walks DELAY↔REVERB↔MASTER FX; on MACRO it walks MACRO↔CV SEQ↔SCENES. On MOD MATRIX the row's siblings ARE the eight LFO columns, so E1 moves the focused LFO. (One exception: on HOME, E1 cycles the visualizers.)
 
 The grid:
 
@@ -130,7 +131,7 @@ The grid:
 | 2   | **VOICE 1 · 2 · 3 · 4**                             |
 | 3   | **EUCLID 1 · 2 · 3 · 4**                            |
 | 4   | **LFO 1 … 8**                                       |
-| 5   | **MOD MATRIX**                                      |
+| 5   | **MOD MATRIX** ×8 - one cell per LFO column, so you can jump straight to any LFO's column; your destination row is kept |
 | 6   | **DELAY · REVERB · MASTER FX**                      |
 | 7   | **MACRO CONTROLLER · CV SEQUENCER · SCENES**        |
 | 8   | **GLOBAL · PROJECT**                                |
@@ -301,9 +302,11 @@ Routes the **8 LFOs** to voice parameters. The grid: each **row** is a destinati
 | **E3**    | set the focused cell's depth (bipolar, 0.1% steps; turn faster for coarser) |
 | **K2+K3** | reset the focused cell to 0                                      |
 
-A cell's circle is filled bright for positive depth, grey for negative. The focused cell's exact depth is shown as a percentage under the title.
+A cell's circle is filled bright for positive depth, grey for negative. The focused cell's exact depth is shown as a percentage under the title, and the focused LFO's name sits next to the position dots.
 
-Destinations, per voice: Pitch, Tune, Harmonics, Timbre, Morph, LP Cut, LP Res, HP Cut, Drive, Chorus, Delay Send, Reverb Send, LPG Decay, Pan and Level.
+On the minimap the matrix appears as **eight MM cells**, one per LFO column: jump into any of them and you land on the **same destination row you left**, with that cell's LFO focused - so "LFO 6 into voice 3's timbre" is one minimap jump away from anywhere.
+
+Destinations, per voice: Pitch, Tune, Harmonics, Timbre, Morph, LP Cut, LP Res, LPG Decay, Pan and Level.
 
 ### CV SEQUENCER
 
@@ -377,6 +380,8 @@ Eight scene slots. A scene is a full snapshot of everything you edit: all four v
 
 Switching scenes saves your current work back into the slot you're leaving, so each scene keeps its own edits. The clock is **per scene**, so different scenes can run at different tempos. All 8 scenes are saved as part of a project.
 
+**Copy and paste** (SCENES screen only): **K1+K2** copies the current scene as you hear it right now, unsaved tweaks included; **K1+K3** pastes it into the **highlighted** slot. The compose loop this enables: build scene 1, copy, highlight slot 2, paste, keep composing, copy again, paste to 3... Paste is undoable, and since the paste chord owns K1+K3 here, the master-volume hold (K1+K3+E1) is unavailable on this one screen.
+
 Initializing a scene is destructive, so it asks first with a full-screen **INITIALIZE SCENE N?** (K2 = no, K3 = yes), the same confirmation as project overwrite and delete. Storing over **another** slot's saved snapshot asks too (**OVERWRITE SCENE N?**); storing into the current slot never asks - that's the routine "save my tweaks".
 
 ### GLOBAL
@@ -393,6 +398,7 @@ Project-wide settings. A simple list (**E2** scroll, **E3** value, **K2+K3** res
 | **Mod Depth**        | global scaler on all modulation                       |
 | **Seed**             | the random/S&H seed (K1+K2+K3 here, or on an S&H SEED LFO's screen, re-rolls it) |
 | **S&H Seed Start 0** | pin the first step of every S&H SEED loop to 0, so seeded melodies always start from the unmodulated base note |
+| **Grid Brightness**  | 3-level LED dimmer for the attached monome grid (this row only appears while one is connected; never saved - a live-room knob like master volume) |
 
 `Root` and `Scale` set the musical grid: with a scale active, voice **Pitch** steps note-by-note and stays in key; set `Scale` to **Off** for chromatic pitch.
 
@@ -422,7 +428,67 @@ The list shows **+ new project** at the top, then your saved projects (a dot mar
 
 ---
 
-## 8. Recipe: generative ambient
+## 8. The grid
+
+Plug in a **monome grid 128** (16×8, varibright) and dronage mirrors itself onto it. The grid is strictly optional - without one, nothing changes - and it never invents features: every pad drives the exact same actions as the keys and encoders, through the same dialogs, the same undo history, and the same per-parameter feels.
+
+```
+      1    2    3    4    5    6    7    8    9   10   11   12   13   14   15   16
+ 1 | HOME  ·    ·    ·    ·    ·    ·    ·    ·    ·    ·    ·   S1   S2   S3   S4
+ 2 |  V1   V2   V3   V4   ·    ·    ·    ·    ·    ·    ·    ·   S5   S6   S7   S8
+ 3 |  E1   E2   E3   E4   ·    ·    ·    ·    ·    ·    ·    ·    ·    ·    ·    ·
+ 4 |  L1   L2   L3   L4   L5   L6   L7   L8   ·    ·    ·    ·    ·    ·    ·    ·
+ 5 |  MM   MM   MM   MM   MM   MM   MM   MM   ·    ·    ·    ·  RST  RND   NO  YES
+ 6 |  DLY  RVB  MST  ·    ·    ·    ·    ·    ·    ·    ·    ·  SHF  MAP  UNDO REDO
+ 7 |  MAC  CV   SCN  ·    ·    ·    ·    ·    ·    ·    ·    ·   +    ◀◀    ▲   ▶▶
+ 8 |  GLB  PRJ  ·    ·    ·    ·    ·    ·    ·    ·    ·    ·   -    ◀     ▼    ▶
+```
+
+One rule to trust everywhere: **an unlit pad does nothing.** Every pad that does something is at least faintly lit, and brightness always means something - dim = present/inactive, bright = active/current, blinking = a dialog is waiting.
+
+### The left side: the minimap in hardware
+
+The left eight columns are the [minimap](#5-moving-between-screens-the-minimap), pad for pad: press any cell and you jump to that screen. The pads are alive:
+
+- **V1-V4** breathe with each voice's gate fade (a swelling voice literally brightens over its Fade In seconds); in sequenced mode they flash on every actual trigger, decaying with LPG Decay. **Hold SHIFT and press one to toggle that voice's gate** from anywhere.
+- **L1-L8** glow with each LFO's live value, the whole modulation section visible at a glance.
+- **MM ×8** jump into the mod matrix with that pad's **LFO column focused**, landing on the same destination row you last used - "LFO 6 into voice 3" is one press away from anywhere.
+- The current screen's pad is boosted so you always know where you are.
+
+### The scene pads (S1-S8)
+
+Top-right, matching the SCENES screen's own 2×4 layout. **Press = recall** that scene (the current one shows bright). With **SHIFT held** they become the clipboard: **hold a pad ~1.5 s to COPY that scene** (the pad ramps up and lands bright when the copy arms), **tap a pad to PASTE into it**. Copying the active scene captures the live state, tweaks included; pastes are one undo step.
+
+### The control block (bottom-right 4×4)
+
+| Pad | Does |
+|-----|------|
+| **▲ ▼** | move the cursor, exactly like E2. On CV SEQUENCER: pick the track; on SCENES: move between slot rows |
+| **◀ ▶** | move horizontally where the screen has a horizontal: MOD MATRIX = LFO column, CV SEQUENCER = cell, MACRO = slot cells, SCENES = across slots, HOME = voice toggles. Dark elsewhere |
+| **◀◀ ▶▶** | previous / next sibling screen, wrapping (hold to flip through all eight LFOs); on HOME they cycle the visualizers |
+| **+ −** | nudge the focused value, exactly like E3 - same per-parameter feel, scale-aware pitch stepping included. Hold for key-repeat that starts slow and accelerates |
+| **SHF** | the modifier. Held: **+/−** go coarse (much faster, and 10× faster still on matrix depths), **▲/▼** on the matrix jump a whole voice (same parameter), voice pads toggle gates, scene pads copy/paste. **Tapped alone**: the screen's K3-style action - gate toggle on HOME/VOICE/EUCLID, store on SCENES, load on PROJECT |
+| **MAP** | hold = the minimap pops up on the norns screen; steer the highlight with the arrows, release to jump there |
+| **UNDO REDO** | one history step per tap, same 10-level history as K2+E1 |
+| **RST** | the screen's K2+K3 reset: parameter to default, matrix/CV cell to zero, scene initialize / project delete (their confirm dialogs appear; answer with YES/NO) |
+| **RND** | roll the current screen's [dice](#randomize-k1--k2--k3) |
+| **NO YES** | answer an open dialog. Otherwise **YES = play** (lit while playing), **NO = stop** (lit while stopped); on SCENES, YES recalls the highlighted slot, and on PROJECT it loads the highlighted project |
+
+While anything owns the norns screen (a text keyboard, the update prompt, the system menu), the whole grid goes politely inert.
+
+### The visualizer
+
+**Hold HOME for 2 seconds** and the grid becomes a slow star-field driven by the actual sound: stars exist and brighten with each voice's gate fade, sit high or low with its (post-modulation) pitch, and twinkle faster as its filter opens. Every euclid trigger sparks; every note that appears or moves gets a soft halo around it; routed LFOs shimmer in their own columns. Everything blends additively. **Any pad press returns to the controls.**
+
+It also starts on its own after a period of no activity - the **grid idle visualizer** time lives in the norns PARAMETERS menu (default 15 minutes, 0 = never).
+
+### Grid brightness
+
+The GLOBAL screen gains a **Grid Brightness** row while a grid is attached: 3 = full (default), 2 = dimmed, 1 = night. It scales every LED on the surface, is never saved anywhere, and lit pads stay visibly lit even at the lowest setting.
+
+---
+
+## 9. Recipe: generative ambient
 
 The trick is to let sample-and-hold LFOs choose notes for you while the **scale quantizer keeps everything in key**, so the result is musical even though it's generative.
 
@@ -437,7 +503,7 @@ Start with modest depths and slow rates. The magic is in the interplay of a few 
 
 ---
 
-## 9. Cheat sheet
+## 10. Cheat sheet
 
 **Navigation**
 
@@ -476,9 +542,11 @@ Start with modest depths and slow rates. The magic is in the interplay of a few 
 |-------------|---------------------------------|
 | **K1+K2+K3**| randomize the current screen (undoable) |
 | **K2 + E1** | undo / redo                     |
+| **K1+K2** (SCENES) | copy the current scene    |
+| **K1+K3** (SCENES) | paste to highlighted slot |
 | **K1+K2** (PROJECT) | quick-save, random name  |
 | **K1+K2** (elsewhere) | transport play/stop      |
-| **K1+K3** hold + E1 | master volume            |
+| **K1+K3** hold + E1 | master volume (not on SCENES) |
 | **K3** (VOICE/EUCLID) | toggle that voice's gate |
 | **K3** + E3 (Pitch) | jump in octaves          |
 | **K3** + E3 (Tune)  | snap to whole semitones  |
@@ -486,7 +554,7 @@ Start with modest depths and slow rates. The magic is in the interplay of a few 
 
 ---
 
-## 10. FAQ
+## 11. FAQ
 
 **Q. I launched it and there's no sound. Is it broken?**
 
@@ -520,6 +588,10 @@ Best-effort. The full engine needs more CPU than a CM3/Pi 3 core has, so below P
 
 At launch, dronage quietly checks whether a newer release exists (it never blocks - the check runs in the background and only ever shows something if there's news). If an update is available you get a full-screen **UPDATE AVAILABLE** prompt: **K2 = later, K3 = update**. K3 pulls the update and reloads the script; if the release changed the audio engine you'll then see the familiar install screen (K3 = restart) and you're done. The check only happens when the script was installed via maiden/git, the files are unmodified, and the norns is online - otherwise it silently skips and boots as normal. If you installed by copying files to the SD card by hand, you'll never see the prompt; update the same way you installed. Updating through maiden's project manager also still works exactly as before.
 
+**Q. Does it work with a monome grid?**
+
+Yes - a grid 128 gets a full control surface: every screen one press away, cursor/value pads, scene launch and copy/paste, undo/redo, the randomizer, and a generative visualizer. See [the grid](#8-the-grid). No grid needed for anything, and smaller grids (64) are not supported.
+
 **Q. Where do projects live?**
 
 On the norns, in `dust/data/dronage-norns/`. Saving and loading are done entirely from the **PROJECT** screen.
@@ -530,7 +602,7 @@ Press **K2** to cancel the norns text keyboard, or finish naming with **K3** on 
 
 ---
 
-## 11. The full scale list
+## 12. The full scale list
 
 The **Scale** parameter on GLOBAL offers **64 scales**, plus **Off** (no quantization, fully chromatic). The chosen scale snaps every voice's pitch to its degrees, relative to the **Root**. Microtonal scales are tuned exactly, so a 19-EDO step or a just-intonation third lands between the usual twelve semitones.
 
@@ -548,7 +620,7 @@ Persian, Oriental, Balinese, Purvi, Spanish 8, Gagaku, In Sen, Okinawa, Hirajosh
 
 ---
 
-## 12. Credits
+## 13. Credits
 
 Dronage Norns stands on some excellent open-source DSP - vendored, and tastefully modified where it served the sound:
 

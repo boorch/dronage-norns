@@ -77,6 +77,7 @@ local rand   = include("dronage-norns/lib/dronage_norns_random")
 dronage_undo, dronage_rand = undo, rand   -- deliberate globals: maiden-REPL inspection/driving
 local ui     = include("dronage-norns/lib/dronage_norns_ui")
 local grd    = include("dronage-norns/lib/dronage_norns_grid")
+dronage_grid = grd   -- deliberate global: maiden-REPL inspection/driving (like dronage_undo)
 local euclid = include("dronage-norns/lib/dronage_norns_euclid")
 local scr    = include("dronage-norns/lib/dronage_norns_screens")
 local D      = include("dronage-norns/lib/dronage_norns_defaults")   -- single source of truth for defaults
@@ -324,6 +325,7 @@ function init()
   scr.init({
     eng = eng, mtx = mtx, seq = seq, mac = mac, scenes = scenes, euclid = euclid, scales = scales,
     undo = undo, rand = rand,
+    grid_connected = function() return grd.connected() end,   -- GLOBAL shows Grid Brightness only then
     NOTE = NOTE,
     get_amp = function() return ui_amp end,
     transport = function() return transport end,
@@ -331,7 +333,22 @@ function init()
     project = project, project_new = project_new,
     mod_result = mod_result,   -- live post-mod values for the real-time value + +/- display
   })
-  pcall(grd.init, seq, mtx)   -- optional grid 128 (safe no-op without one)
+  -- grid 128 (optional; safe no-op without one): a physical mirror of the screens UI.
+  -- The blocked() closure keeps grid input inert whenever something owns the norns screen.
+  params:add_separator("dronage_grid_sep", "grid")
+  params:add{ type = "number", id = "dronage_grid_idle", name = "grid idle visualizer (min)",
+    min = 0, max = 60, default = 15 }   -- 0 = never; any grid/enc/key activity resets the timer
+  -- master LED dimmer, 3 levels (3 = full, 2 = x0.75, 1 = x0.25). A live-room knob like
+  -- master volume: never saved. Shown on the GLOBAL screen only while a grid is attached.
+  params:add{ type = "number", id = "dronage_grid_bright", name = "grid brightness",
+    min = 1, max = 3, default = 3 }
+  params:set_save("dronage_grid_bright", false)
+  pcall(grd.init, {
+    scr = scr, mtx = mtx, euclid = euclid, scenes = scenes, mod_result = mod_result,
+    blocked = function()
+      return needs_install or update.state ~= nil or splash ~= nil or norns.menu.status()
+    end,
+  })
   -- splash: one of 3 bayer4x4-dithered art frames, shown until the first knob/button (consumed)
   math.randomseed(os.time())
   local ok, img = pcall(screen.load_png, norns.state.path .. "images/dronage" .. math.random(1, 3) .. ".png")
@@ -460,6 +477,7 @@ function redraw()
 end
 
 function enc(n, d)
+  pcall(grd.activity)   -- physical input parks the grid's idle-visualizer timer
   if needs_install then return end
   if update.state then return end   -- update overlay owns the input
   if splash then splash = nil; screen_dirty = true; return end   -- dismiss only; do nothing else
@@ -467,6 +485,7 @@ function enc(n, d)
 end
 
 function key(n, z)
+  pcall(grd.activity)   -- physical input parks the grid's idle-visualizer timer
   if needs_install then
     if install_ok and n == 3 and z == 1 then finish_install() end   -- K3 = finish + restart (incl jackd)
     return
