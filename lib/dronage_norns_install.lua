@@ -5,14 +5,17 @@
 -- the user to restart (scsynth scans Extensions only at boot). Same pattern paracosms uses. The
 -- matching wrapper .sc classes live in lib/ (compiled from dust at boot).
 --
--- Update detection is by CONTENT: the bundle is its own version. We compare a combined md5 of the
--- shipped .so against the installed ones - so a rebuilt binary is auto-detected and reinstalled,
--- with no version number to hand-bump or let drift.
+-- Update detection is by CONTENT: the bundle is its own version. We compare a combined md5 of
+-- the shipped .so AND the script's SuperCollider class files (lib/*.sc) against a stamp written
+-- at install time - so a rebuilt binary OR an engine/class change is auto-detected and walks the
+-- user through the restart (sclang only recompiles classes at boot), with no version number to
+-- hand-bump or let drift. A pure-Lua update stays restart-free: Lua hot-reloads completely.
 
 local M = {}
 
 M.dest = "/home/we/.local/share/SuperCollider/Extensions/dronage-norns/"
 M.src  = _path.code .. "dronage-norns/ignore/ugens/"
+M.libsc = _path.code .. "dronage-norns/lib/"
 
 local function sh(cmd)
   local f = io.popen(cmd); if not f then return "" end
@@ -20,26 +23,38 @@ local function sh(cmd)
   return (out:gsub("%s+$", ""))
 end
 
--- combined md5 of all *.so in dir (name-sorted for stable order), or "" if none / dir missing
-local function so_hash(dir)
-  return sh("cd '" .. dir .. "' 2>/dev/null && cat $(ls *.so 2>/dev/null | sort) 2>/dev/null | md5sum 2>/dev/null | cut -d' ' -f1")
+-- combined md5 of the SHIPPED SC side: bundle .so + lib/*.sc (name-sorted for stable order)
+local function sc_hash()
+  return sh("cat $(ls '" .. M.src .. "'*.so 2>/dev/null | sort) $(ls '" .. M.libsc .. "'*.sc 2>/dev/null | sort) 2>/dev/null | md5sum 2>/dev/null | cut -d' ' -f1")
 end
 
--- installed AND byte-identical to the shipped bundle?
+local function stamp_path() return M.dest .. "installed.md5" end
+
+local function installed_hash()
+  return sh("cat '" .. stamp_path() .. "' 2>/dev/null")
+end
+
+-- installed AND byte-identical to the shipped bundle + classes (verified via the install stamp,
+-- which is only written after a successful copy)?
 function M.is_installed()
-  local want = so_hash(M.src)
+  local want = sc_hash()
   if want == "" then return false end          -- bundle missing/empty -> can't verify
-  return so_hash(M.dest) == want
+  return installed_hash() == want
 end
 
--- copy the bundled .so out to Extensions. returns ok, message.
+-- wipe + copy the bundled .so out to Extensions and stamp the combined hash. returns ok, message.
 function M.install()
-  if so_hash(M.src) == "" then return false, "UGen bundle missing" end
+  local want = sc_hash()
+  if want == "" then return false, "UGen bundle missing" end
+  os.execute("rm -rf '" .. M.dest .. "'")      -- full wipe: no stale UGens or stray files, ever
   os.execute("mkdir -p '" .. M.dest .. "'")
-  os.execute("rm -f '" .. M.dest .. "'*.so")   -- clear stale UGens (handles renames/removals across updates)
   os.execute("cp -f '" .. M.src .. "'*.so '" .. M.dest .. "'")
-  if M.is_installed() then return true, "installed" end
-  return false, "copy failed"
+  -- verify the copied binaries byte-match the bundle before stamping
+  local got = sh("cat $(ls '" .. M.dest .. "'*.so 2>/dev/null | sort) 2>/dev/null | md5sum | cut -d' ' -f1")
+  local src = sh("cat $(ls '" .. M.src .. "'*.so 2>/dev/null | sort) 2>/dev/null | md5sum | cut -d' ' -f1")
+  if got ~= src then return false, "copy failed" end
+  os.execute("printf '%s' '" .. want .. "' > '" .. stamp_path() .. "'")
+  return true, "installed"
 end
 
 return M

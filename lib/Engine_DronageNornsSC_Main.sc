@@ -15,6 +15,7 @@ Engine_DronageNornsSC_Main : CroneEngine {
 
 	var voices, voiceGroup, fxGroup, dlySendBus, revSendBus, rvbSendBus, delaySynth, revSynth;
 	var mixBus, reverbSynth, tapeSynth, wobbleBuf, compressBuf, expandBuf, hissBuf;
+	var fwdBuf, revBufL, revBufR;    // the big delay lines as server Buffers (plain RAM, NOT the 8MB RT pool)
 	var specForwarder, matronAddr;   // forward the master-out spectrum SendReply to matron for the HOME viz
 	var scopeBuf, scopeRoutine;      // circular master-out L/R window, polled to matron for the vectorscope
 
@@ -55,6 +56,14 @@ Engine_DronageNornsSC_Main : CroneEngine {
 			{ Buffer.read(context.server, "/home/we/dust/code/dronage-norns/samples/tapehiss_loop.wav") },
 			{ Buffer.alloc(context.server, 48, 2) });
 		scopeBuf = Buffer.alloc(context.server, 256, 2);   // last 256 master-out L/R frames (vectorscope window)
+		// Delay lines live in SERVER BUFFERS (ordinary RAM), deliberately NOT RTAlloc: the
+		// scsynth RT pool is only 8 MB on norns and the old in-UGen RTAllocs (~4.6 MB) starved
+		// it in the field (whine / silence / "alloc failed" spam, 2026-07-05). Sizes are the
+		// SAME as before: forward 4 s (the 2T tap halves the usable division), reverse 2x 4 s.
+		fwdBuf  = Buffer.alloc(context.server, (context.server.sampleRate * 4.0).asInteger, 1);
+		revBufL = Buffer.alloc(context.server, (context.server.sampleRate * 8.0).asInteger, 1);
+		revBufR = Buffer.alloc(context.server, (context.server.sampleRate * 8.0).asInteger, 1);
+		context.server.sync;   // buffers exist before any synth runs (also settles prior frees on reload)
 		{
 			var nn = 1024, mu = 510;
 			var unit = Array.fill(nn, { |i| i.linlin(0, nn - 1, -1, 1) });
@@ -200,7 +209,7 @@ trig   = TDelay.kr(t_trig, 0.004);   // dronage-tui: the audible trigger fires ~
 				delaySamps = 24000, feedback = 0.5, tone = 0.0, mod = 0.0, granular = 0.0, delayToReverb = 0.0;
 			var snd, wet;
 			snd = In.ar(dlyBus, 1);
-			wet = DronageGranularDelay.ar(snd, delaySamps, feedback.clip(0, 1),
+			wet = DronageGranularDelay.ar(fwdBuf, snd, delaySamps, feedback.clip(0, 1),
 				tone.clip(-1, 1), mod.clip(0, 1), granular.clip(-1, 1));
 			Out.ar(out, wet);
 			Out.ar(rvbBus, (wet[0] + wet[1]) * 0.5 * delayToReverb.clip(0, 1));   // Delay > Rvb send
@@ -213,7 +222,7 @@ trig   = TDelay.kr(t_trig, 0.004);   // dronage-tui: the audible trigger fires ~
 				delaySamps = 24000, feedback = 0.5, tone = 0.0, mod = 0.0, granular = 0.0, delayToReverb = 0.0, revToFwd = 0.0;
 			var snd, wet;
 			snd = In.ar(revBus, 1);
-			wet = DronageReverseDelay.ar(snd, delaySamps, feedback.clip(0, 1),
+			wet = DronageReverseDelay.ar(revBufL, revBufR, snd, delaySamps, feedback.clip(0, 1),
 				tone.clip(-1, 1), mod.clip(0, 1), granular.clip(-1, 1));
 			Out.ar(out, wet);
 			Out.ar(rvbBus, (wet[0] + wet[1]) * 0.5 * delayToReverb.clip(0, 1));   // Delay > Rvb send
@@ -477,6 +486,7 @@ trig   = TDelay.kr(t_trig, 0.004);   // dronage-tui: the audible trigger fires ~
 		rvbSendBus.free;
 		mixBus.free;
 		wobbleBuf.free; compressBuf.free; expandBuf.free; hissBuf.free;
+		fwdBuf.free; revBufL.free; revBufR.free;
 		specForwarder.free;
 		scopeRoutine.stop; scopeBuf.free;
 	}
