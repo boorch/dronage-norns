@@ -149,7 +149,7 @@ Most screens speak the same language, so once you learn one you know them all:
 
 - **E2 selects**: moves the cursor down a list, or across the rows of a grid.
 - **E3 sets**: changes the value the cursor is on.
-- **K2 plays/stops**: on every screen except SCENES (recall) and PROJECT (save), a lone K2 toggles the transport. It acts on **release**, so any chord that includes K2 swallows it - no accidental stops. **PLAY waits for the next beat** (the play indicator blinks while it waits) so sequences, loops, and any Link'd gear all start on the same grid; STOP is instant.
+- **K2 plays/stops**: on every screen except SCENES (recall) and PROJECT (save), a lone K2 toggles the transport. It acts on **release**, so any chord that includes K2 swallows it - no accidental stops. **Manual PLAY waits for the next beat** (the play indicator blinks while it waits) so your sequences and loop land on the beat grid; STOP is instant. When an **external clock (MIDI or Ableton Link) starts the transport, dronage locks to that downbeat immediately** - no wait, so it starts dead-on with the rest of your rig.
 - **K2+K3 resets**: clears the focused cell/parameter back to nothing/zero/default. (Pressing both cancels the single-key actions.)
 
 On the **list screens** (VOICE, EUCLID, LFO, and the FX/GLOBAL panels) **K2+K3 resets the highlighted parameter** to its default. Nothing lives on columns any more: the MOD MATRIX moves its LFO column with **E1**, and the CV SEQUENCER and MACRO walk every cell linearly with **E2**.

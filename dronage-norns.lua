@@ -111,22 +111,30 @@ local transport = false
 local transport_start = 0
 local transport_clk        -- pending quantized PLAY ("armed" until the next beat boundary)
 local function mod_beats() return clock.get_beats() - transport_start end
-local function set_transport(play)
+-- the shared start sequence: pin transport_start to NOW (a whole beat - never backdated, or
+-- step 0's trigger would be skipped) and re-zero every sync source. Used by both play paths.
+local function begin_transport()
+  transport_start = clock.get_beats()
+  mtx.reset_phases()
+  seq.reset()
+  euclid.reset()
+  transport = true
+end
+-- immediate=true skips the beat quantize: the caller is already on the downbeat (an external
+-- MIDI/Link START, or an internal CLOCK>reset, both of which just re-zeroed clock.get_beats()).
+-- Quantizing those would wait a whole beat past a boundary that already happened = the ~1s
+-- late-start users saw on euclid voices under ext sync. Manual K3 PLAY still quantizes.
+local function set_transport(play, immediate)
   if play then
     if transport or transport_clk then return end
-    -- PLAY quantizes to the next whole beat so sequences, synced LFOs, the live looper and
-    -- external Link gear all share ONE grid. Armed (blinking) until the boundary; STOP is
-    -- instant. transport_start therefore always sits on a whole beat - do NOT backdate it
-    -- (a backdated start would skip step 0's trigger).
+    -- manual PLAY quantizes to the next whole beat so sequences, synced LFOs and the live
+    -- looper all land on ONE grid. Armed (blinking) until the boundary; STOP is instant.
     seq.running = true   -- visible to scene/undo snapshots taken during the armed window;
                          -- actual stepping stays gated by `transport` in the clock loops
+    if immediate then begin_transport(); return end
     transport_clk = clock.run(function()
       clock.sync(1)
-      transport_start = clock.get_beats()
-      mtx.reset_phases()
-      seq.reset()
-      euclid.reset()
-      transport = true
+      begin_transport()
       transport_clk = nil
     end)
   else
@@ -378,9 +386,10 @@ function init()
     local internal = params:string("clock_source") == "internal"
     if transport or transport_clk then
       set_transport(false)
-      set_transport(true)
+      set_transport(true, not internal)   -- immediate ONLY when external gear drives transport;
+                                          -- internal CLOCK>reset keeps its normal quantized restart
     elseif not internal then
-      set_transport(true)
+      set_transport(true, true)   -- external START is the sender's downbeat - start now, no 1-beat quantize
       params:set("dronage_transport", 1, true)   -- reflect the external start (silent: no re-action)
     end
     if looper_on then looper.relaunch() end
